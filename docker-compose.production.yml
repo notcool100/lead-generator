@@ -1,0 +1,77 @@
+# Production: docker compose -f docker-compose.production.yml up -d --build
+# Put Nginx/Caddy/Cloudflare in front of port 3000 (see README "Deploy to a VPS").
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_lead}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_lead}"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 10
+
+  migrate:
+    build: .
+    env_file: .env.production
+    environment: &dbenv
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_lead}
+      REDIS_URL: redis://redis:6379
+    command: ["pnpm", "db:deploy"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    environment: *dbenv
+    command: ["pnpm", "start"]
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: [previews:/app/storage/previews]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Independent of `web`: jobs keep processing while the web app restarts.
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      <<: *dbenv
+      SERVICE_NAME: worker
+    command: ["pnpm", "worker"]
+    volumes: [previews:/app/storage/previews]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+  redisdata:
+  previews:

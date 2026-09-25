@@ -1,0 +1,4 @@
+lib/generated
+.next
+storage
+pnpm-lock.yaml

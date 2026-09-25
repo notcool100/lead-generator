@@ -1,3 +1,9 @@
 allowBuilds:
   sharp: false
   unrs-resolver: false
+  prisma: true
+  "@prisma/engines": true
+  "@prisma/client": true
+  bcrypt: false
+  esbuild: true
+  msgpackr-extract: true
