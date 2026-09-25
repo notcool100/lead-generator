@@ -1,0 +1,89 @@
+# Coolify deployment (Build Pack: Docker Compose, compose file: /docker-compose.coolify.yml).
+# Set the domain of the `web` service to https://ai-lead.ubucknepal.com:3000 in Coolify.
+# PostgreSQL is an existing Coolify database reached over the shared `coolify` network.
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_URL: redis://redis:6379
+  APP_URL: ${APP_URL:-https://ai-lead.ubucknepal.com}
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+  AI_PROVIDER: ${AI_PROVIDER:-claude_code}
+  CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN}
+  CLAUDE_CODE_MODEL: ${CLAUDE_CODE_MODEL:-opus}
+  CLAUDE_CODE_SMALL_MODEL: ${CLAUDE_CODE_SMALL_MODEL:-haiku}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  LEAD_PROVIDER: ${LEAD_PROVIDER:-openstreetmap,web_search}
+  DISCOVERY_BATCH_SIZE: ${DISCOVERY_BATCH_SIZE:-20}
+  GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+  OSM_CONTACT: ${OSM_CONTACT:-https://ai-lead.ubucknepal.com}
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+  EMAIL_FROM: ${EMAIL_FROM:-UBuck Nepal <outreach@ubucknepal.com>}
+  EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-outreach@ubucknepal.com}
+  EMAIL_WEBHOOK_SECRET: ${EMAIL_WEBHOOK_SECRET:-}
+  SMTP_HOST: ${SMTP_HOST:-mail.ubucknepal.com}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-outreach@ubucknepal.com}
+  SMTP_PASSWORD: ${SMTP_PASSWORD}
+  IMAP_HOST: ${IMAP_HOST:-mail.ubucknepal.com}
+  IMAP_PORT: ${IMAP_PORT:-993}
+  IMAP_USER: ${IMAP_USER:-outreach@ubucknepal.com}
+  IMAP_PASSWORD: ${IMAP_PASSWORD}
+  DEPLOYMENT_PROVIDER: vps
+  PREVIEW_OUTPUT_DIR: /app/storage/previews
+  ADMIN_EMAIL: ${ADMIN_EMAIL}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+  SEED_SAMPLE_DATA: "false"
+
+services:
+  web:
+    build: .
+    command: ["sh", "-c", "pnpm db:deploy && pnpm db:seed && pnpm start"]
+    environment:
+      <<: *app-env
+      SERVICE_NAME: web
+    expose: ["3000"]
+    volumes: [previews:/app/storage/previews]
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [default, coolify]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # Runs independently of `web`: jobs keep processing during web restarts.
+  worker:
+    build: .
+    command: ["pnpm", "worker"]
+    environment:
+      <<: *app-env
+      SERVICE_NAME: worker
+    volumes: [previews:/app/storage/previews]
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [default, coolify]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 10
+
+volumes:
+  previews:
+  redisdata:
+
+networks:
+  coolify:
+    external: true

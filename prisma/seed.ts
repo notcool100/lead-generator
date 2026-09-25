@@ -94,7 +94,10 @@ function slug(s: string) {
 async function main() {
   setAIProviderForTests(new MockAIProvider());
 
-  // Admin user
+  // Admin user (password only set on first creation)
+  if (process.env.NODE_ENV === "production" && (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 10)) {
+    throw new Error("Set ADMIN_PASSWORD (min 10 chars) for production seeding");
+  }
   const email = (process.env.ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? "change-me-now";
   const admin = await prisma.user.upsert({
@@ -106,6 +109,18 @@ async function main() {
 
   await ensureTemplatesSeeded();
   console.log("✓ 9 website templates");
+
+  // Production: admin + templates only; never touch existing settings or data.
+  if (process.env.SEED_SAMPLE_DATA === "false") {
+    const existing = await prisma.setting.findUnique({ where: { key: "compliance" } });
+    if (!existing) {
+      const from = process.env.EMAIL_FROM?.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>/);
+      await saveSettings("compliance", { ...(await getSettings("compliance")), ...(from ? { senderName: from[1].trim(), senderEmail: from[2].trim() } : {}), replyTo: process.env.EMAIL_REPLY_TO ?? "" });
+      console.log("✓ default compliance settings");
+    }
+    console.log("Done (SEED_SAMPLE_DATA=false — no sample data).");
+    return;
+  }
 
   await saveSettings("compliance", { ...(await getSettings("compliance")), senderName: "Alex from Studio North", businessName: "Studio North Web Design", businessAddress: "Rua Exemplo 1, 1000-001 Lisboa, Portugal" });
   await saveSettings("general", await getSettings("general"));
