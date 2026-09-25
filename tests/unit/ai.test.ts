@@ -45,8 +45,30 @@ describe("template rendering", () => {
   });
   it("marks placeholder content clearly instead of inventing offerings", () => {
     const html = renderPreviewHtml(sampleConfig());
-    expect(html).toContain("Your content here");
-    expect(html).toContain("not an official website");
+    expect(html).toContain("Sample section");
+    expect(html).toContain("Not an official website");
+    // no invented testimonials: review cards are explicit placeholders
+    expect(html).not.toContain("<blockquote>Your favourite");
+  });
+  it("shows reviews only from real rating data, supports dark mode and reduced motion, uses no em-dashes", () => {
+    const cfg = sampleConfig();
+    expect(renderPreviewHtml(cfg)).not.toContain('id="reviews"');
+    cfg.content.rating = { value: 4.6, count: 412, source: "google" };
+    const html = renderPreviewHtml(cfg);
+    expect(html).toContain('id="reviews"');
+    expect(html).toContain("Average from 412 reviews");
+    expect(html).toContain("prefers-color-scheme:dark");
+    expect(html).toContain("prefers-reduced-motion:no-preference");
+    expect(html).not.toMatch(/[\u2014\u2013]/);
+    expect(html).not.toMatch(/<script/i);
+  });
+  it("uses licensed photos with srcset and credits photographers", () => {
+    const cfg = sampleConfig();
+    const img = { url: "https://images.unsplash.com/photo-1?w=1600", alt: "Dining room", source: "unsplash", license: "Unsplash License", attribution: "Ana Silva on Unsplash", attributionUrl: "https://unsplash.com/@ana" };
+    cfg.images = { hero: img, gallery: [img] };
+    const html = renderPreviewHtml(cfg);
+    expect(html).toContain("srcset=");
+    expect(html).toContain("Ana Silva on Unsplash");
   });
   it("maps categories to templates deterministically", () => {
     expect(matchTemplateByKeyword("Italian restaurant")).toBe("restaurant");

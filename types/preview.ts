@@ -43,7 +43,7 @@ export const PreviewConfigSchema = z.object({
     }),
     social: z.record(z.string(), z.string().url()),
   }),
-  images: z.object({ hero: ImageRefSchema.nullable(), gallery: z.array(ImageRefSchema).max(6) }),
+  images: z.object({ hero: ImageRefSchema.nullable(), gallery: z.array(ImageRefSchema).max(12) }),
   seo: z.object({ title: z.string().max(70), description: z.string().max(170) }),
   generatedAt: z.string(),
 });

@@ -49,6 +49,7 @@ const EnvSchema = z.object({
   PREVIEW_OUTPUT_DIR: z.string().default("./storage/previews"),
 
   UNSPLASH_ACCESS_KEY: z.string().optional(),
+  PEXELS_API_KEY: z.string().optional(),
   ALLOW_PRIVATE_NETWORK_FETCH: z.string().optional(),
   LOG_LEVEL: z.string().default("info"),
 });

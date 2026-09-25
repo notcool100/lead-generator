@@ -7,7 +7,7 @@ import type { NextAction } from "@/queue/queues";
 import { generateJsonCached } from "@/services/ai-analysis/aiClient";
 import { TEMPLATES, type TemplateKey } from "@/templates/registry";
 import { PreviewConfigSchema, type PreviewConfig } from "@/types/preview";
-import { findStockImages } from "./images";
+import { findPreviewImages } from "./images";
 import { selectTemplate } from "./templateSelector";
 import { env } from "@/lib/env";
 
@@ -79,7 +79,7 @@ export async function generatePreview(leadId: string, opts: { templateKey?: stri
       maxTokens: 3000,
     });
 
-    const images = await findStockImages(tpl.imageQuery, 4);
+    const images = await findPreviewImages(tpl.imageQueries, `${lead.businessName}|${lead.city ?? ""}`);
     const c = copy.data;
     const palette = tpl.palettes[Math.min(c.paletteIndex, tpl.palettes.length - 1)];
     const mapQuery = [lead.businessName, lead.address, lead.city, lead.country].filter(Boolean).join(", ");
@@ -105,7 +105,7 @@ export async function generatePreview(leadId: string, opts: { templateKey?: stri
         contact: { phone: lead.phone, email: lead.email, address: lead.address, city: lead.city, country: lead.country, mapQuery },
         social: Object.fromEntries(Object.entries((lead.socialLinks as Record<string, string> | null) ?? {}).filter(([, v]) => /^https?:\/\//.test(v))),
       },
-      images: { hero: images[0] ?? null, gallery: images.slice(1, 4) },
+      images,
       seo: { title: c.seoTitle, description: c.seoDescription },
       generatedAt: new Date().toISOString(),
     });

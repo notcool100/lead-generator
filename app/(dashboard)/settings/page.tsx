@@ -62,7 +62,7 @@ export default async function SettingsPage() {
               <ProviderRow name="Webhook secret" value="EMAIL_WEBHOOK_SECRET" ok={Boolean(e.EMAIL_WEBHOOK_SECRET)} />
               <ProviderRow name="Preview deployment" value={`${e.DEPLOYMENT_PROVIDER}${e.PREVIEW_BASE_DOMAIN ? ` · *.${e.PREVIEW_BASE_DOMAIN}` : " · /p/<slug>"}`} ok={e.DEPLOYMENT_PROVIDER !== "vercel" || Boolean(e.DEPLOYMENT_API_KEY)} />
               <ProviderRow name="Redis" value={e.REDIS_URL.replace(/\/\/[^@]*@/, "//***@")} ok />
-              <ProviderRow name="Stock images" value="Unsplash" ok={Boolean(e.UNSPLASH_ACCESS_KEY)} />
+              <ProviderRow name="Preview photos" value={[e.UNSPLASH_ACCESS_KEY && "Unsplash", e.PEXELS_API_KEY && "Pexels"].filter(Boolean).join(" + ") || "placeholders"} ok={Boolean(e.UNSPLASH_ACCESS_KEY || e.PEXELS_API_KEY)} note="add UNSPLASH_ACCESS_KEY or PEXELS_API_KEY" />
               {e.AI_PROVIDER === "claude_code" ? <p className="mt-3 text-xs text-muted-foreground">Claude runs through the logged-in Claude Code CLI on this machine (your subscription, subject to its usage limits).</p> : null}
               {(e.AI_PROVIDER === "anthropic" && !e.ANTHROPIC_API_KEY) ? <p className="mt-3 text-xs text-warning">No ANTHROPIC_API_KEY set — the offline fact-only generator is used instead of Claude.</p> : null}
               {e.EMAIL_PROVIDER === "log" ? <p className="mt-2 text-xs text-warning">EMAIL_PROVIDER=log — approved emails are logged, not delivered.</p> : null}

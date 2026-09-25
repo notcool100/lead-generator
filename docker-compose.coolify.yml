@@ -17,6 +17,8 @@ x-app-env: &app-env
   DISCOVERY_BATCH_SIZE: ${DISCOVERY_BATCH_SIZE:-20}
   GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
   OSM_CONTACT: ${OSM_CONTACT:-https://ai-lead.ubucknepal.com}
+  UNSPLASH_ACCESS_KEY: ${UNSPLASH_ACCESS_KEY:-}
+  PEXELS_API_KEY: ${PEXELS_API_KEY:-}
   EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
   EMAIL_FROM: ${EMAIL_FROM:-UBuck Nepal <outreach@ubucknepal.com>}
   EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-outreach@ubucknepal.com}

@@ -1,10 +1,20 @@
-import { FONT_PAIRS, TEMPLATES } from "./registry";
+import { FONT_PAIRS, TEMPLATES, type Palette, type TemplateDefinition } from "./registry";
+import { icon } from "./icons";
 import type { ImageRef, PreviewConfig } from "@/types/preview";
 
 /**
- * Renders a PreviewConfig into a single self-contained static HTML page.
- * Every dynamic value is HTML-escaped; no AI output is ever executed or
- * injected as markup. The page ships no JavaScript.
+ * Renders a PreviewConfig into one self-contained static HTML page.
+ *
+ * Design read: concept homepage for a local business, shown to its owner.
+ * Warm, photo-led, premium-consumer language (dials: variance 7, motion 6, density 3).
+ *
+ * - Every dynamic value is HTML-escaped; AI output is never injected as markup.
+ * - No JavaScript (the page is served with a strict CSP). All motion is CSS:
+ *   load-in keyframes, scroll-driven animations (animation-timeline) for
+ *   reveals and parallax, hover transitions. Everything is disabled under
+ *   prefers-reduced-motion, and browsers without scroll timelines get a
+ *   static, fully visible page.
+ * - Light and dark mode: dark tokens are derived from the template palette.
  */
 
 const esc = (s: string | null | undefined) =>
@@ -13,100 +23,392 @@ const esc = (s: string | null | undefined) =>
 function safeHref(href: string): string {
   const h = href.trim();
   if (/^(https?:|mailto:|tel:|#)/i.test(h)) return esc(h);
-  return "#contact";
+  return "#visit";
 }
 
-function mixHex(hex: string, withHex: string, amount: number) {
-  const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-  const [a, b] = [p(hex), p(withHex)];
-  return `#${a.map((v, i) => Math.round(v + (b[i] - v) * amount).toString(16).padStart(2, "0")).join("")}`;
+// ───────────────────────── colour helpers ─────────────────────────
+
+const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+function mix(a: string, b: string, t: number) {
+  const [x, y] = [rgb(a), rgb(b)];
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+}
+function luminance(h: string) {
+  const [r, g, b] = rgb(h).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+const isDark = (h: string) => luminance(h) < 0.2;
+const onColor = (h: string) => (luminance(h) > 0.4 ? "#141414" : "#fafafa");
+
+function tokens(p: Palette) {
+  return {
+    bg: p.background,
+    surface: p.surface,
+    ink: p.text,
+    muted: mix(p.text, p.background, 0.38),
+    line: mix(p.text, p.background, 0.86),
+    accent: p.accent,
+    onAccent: onColor(p.accent),
+    deep: p.primary,
+    onDeep: onColor(p.primary),
+  };
 }
 
-function isDark(hex: string) {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.45;
+/** Dark-mode tokens derived from a light palette (keeps the brand accent recognisable). */
+function darkTokens(p: Palette) {
+  const bg = mix(p.primary, "#0b0c0d", 0.55);
+  const ink = mix(p.background, "#ffffff", 0.25);
+  const accent = luminance(p.accent) < 0.12 ? mix(p.accent, "#ffffff", 0.3) : p.accent;
+  return {
+    bg,
+    surface: mix(bg, "#ffffff", 0.06),
+    ink,
+    muted: mix(ink, bg, 0.35),
+    line: mix(ink, bg, 0.84),
+    accent,
+    onAccent: onColor(accent),
+    deep: mix(bg, "#000000", 0.35),
+    onDeep: ink,
+  };
 }
 
-function imageOrPattern(img: ImageRef | null | undefined, className: string, label: string) {
-  if (img) {
-    return `<img class="${className}" src="${esc(img.url)}" alt="${esc(img.alt)}" loading="lazy" referrerpolicy="no-referrer">`;
+function tokenCss(t: ReturnType<typeof tokens>) {
+  return Object.entries(t)
+    .map(([k, v]) => `--${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${v}`)
+    .join(";");
+}
+
+function paletteFor(t: TemplateDefinition, cfg: PreviewConfig): Palette {
+  return t.palettes.find((p) => p.accent.toLowerCase() === cfg.colors.accent.toLowerCase()) ?? t.palettes[0];
+}
+
+// ───────────────────────── images ─────────────────────────
+
+function srcset(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname === "images.unsplash.com") {
+      return [640, 960, 1400, 2000]
+        .map((w) => {
+          u.searchParams.set("w", String(w));
+          u.searchParams.set("q", "80");
+          u.searchParams.set("auto", "format");
+          u.searchParams.set("fit", "crop");
+          return `${u.toString()} ${w}w`;
+        })
+        .join(", ");
+    }
+    if (u.hostname === "images.pexels.com") {
+      return [640, 960, 1400, 2000]
+        .map((w) => {
+          u.searchParams.set("auto", "compress");
+          u.searchParams.set("cs", "tinysrgb");
+          u.searchParams.set("w", String(w));
+          return `${u.toString()} ${w}w`;
+        })
+        .join(", ");
+    }
+  } catch {
+    /* fall through */
   }
-  return `<div class="${className} pattern" role="img" aria-label="${esc(label)}"></div>`;
+  return null;
 }
 
-const ICONS: Record<string, string> = {
-  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
-  mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
-  pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
-  star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
-  check: '<path d="M20 6 9 17l-5-5"/>',
-};
-const icon = (name: keyof typeof ICONS) =>
-  `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+function picture(img: ImageRef | null, opts: { cls?: string; sizes?: string; eager?: boolean; label?: string; variant?: number } = {}) {
+  if (!img) {
+    return `<div class="ph ph-${(opts.variant ?? 0) % 4} ${opts.cls ?? ""}" role="img" aria-label="${esc(opts.label ?? "Photo placeholder")}">${icon("sparkle", "ph-icon")}</div>`;
+  }
+  const set = srcset(img.url);
+  return `<img class="${opts.cls ?? ""}" src="${esc(img.url)}"${set ? ` srcset="${esc(set)}" sizes="${esc(opts.sizes ?? "100vw")}"` : ""} alt="${esc(img.alt)}" ${opts.eager ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"'} decoding="async" referrerpolicy="no-referrer">`;
+}
+
+/**
+ * Assigns stored images to page roles.
+ * `gallery` order (see images.ts): about, about-2, band, offers x3, gallery x4, visit.
+ */
+function allocate(cfg: PreviewConfig) {
+  const g = cfg.images.gallery;
+  const pool = [cfg.images.hero, ...g].filter((x): x is ImageRef => Boolean(x));
+  const gAt = (i: number) => (g.length ? g[i % g.length] : pool.length ? pool[i % pool.length] : null);
+  return {
+    hero: cfg.images.hero ?? gAt(0),
+    hero2: gAt(1),
+    about: gAt(0),
+    about2: gAt(1),
+    band: gAt(2),
+    offers: [gAt(3), gAt(4), gAt(5)],
+    gallery: [gAt(6), gAt(7), gAt(8), gAt(9), gAt(3), gAt(0)],
+    visit: gAt(10),
+  };
+}
+
+// ───────────────────────── small pieces ─────────────────────────
+
+function stars(value: number) {
+  const out: string[] = [];
+  for (let i = 1; i <= 5; i++) {
+    out.push(value >= i - 0.25 ? icon("star", "star") : value >= i - 0.75 ? icon("starHalf", "star") : icon("starEmpty", "star star-empty"));
+  }
+  return `<span class="stars" aria-label="${value.toFixed(1)} out of 5">${out.join("")}</span>`;
+}
+
+/** Simple monogram mark (one or two initials in a circle). */
+function monogram(name: string) {
+  const letters = name
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return `<span class="mark" aria-hidden="true">${esc(letters || "*")}</span>`;
+}
+
+const SOCIAL_ICONS: Record<string, "instagram" | "facebook" | "tiktok"> = { instagram: "instagram", facebook: "facebook", tiktok: "tiktok" };
+
+// ───────────────────────── page ─────────────────────────
 
 export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boolean } = { watermark: true }): string {
   const t = TEMPLATES[config.templateKey];
-  const fonts = FONT_PAIRS[config.fontPair];
-  const c = config.colors;
-  const dark = isDark(c.background);
-  const muted = mixHex(c.text, c.background, 0.35);
-  const border = mixHex(c.text, c.background, 0.85);
-  const onPrimary = isDark(c.primary) ? "#ffffff" : "#111111";
-  const onAccent = isDark(c.accent) ? "#ffffff" : "#111111";
+  const fonts = FONT_PAIRS[t.defaultFontPair];
+  const palette = paletteFor(t, config);
+  const light = tokens(palette);
+  const darkByDesign = isDark(palette.background);
+  const dark = darkByDesign ? null : darkTokens(palette);
   const k = config.content;
+  const im = allocate(config);
+
   const fontQuery = [...new Set([fonts.heading, fonts.body])]
-    .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:wght@400;500;600;700`)
+    .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500`)
     .join("&");
 
-  const offerings = k.offerings.length
-    ? k.offerings.map((o) => `<article class="card"><h3>${esc(o.title)}</h3><p>${esc(o.description)}</p></article>`).join("")
-    : k.offeringsPlaceholder
-        .map(
-          (label) =>
-            `<article class="card placeholder"><span class="tag">Your content here</span><h3>${esc(label)}</h3><p>This section will show your real ${esc(label.toLowerCase())} — added with you before launch.</p></article>`,
-        )
-        .join("");
-
-  const gallery = config.images.gallery.length
-    ? config.images.gallery.map((img) => `<figure>${imageOrPattern(img, "gimg", img.alt)}</figure>`).join("")
-    : [0, 1, 2].map((i) => `<figure>${imageOrPattern(null, `gimg p${i}`, "Photo placeholder")}<figcaption>Your photos here</figcaption></figure>`).join("");
-
-  const credits = [config.images.hero, ...config.images.gallery]
-    .filter((i): i is ImageRef => Boolean(i && i.attribution))
-    .map((i) => (i.attributionUrl ? `<a href="${esc(i.attributionUrl)}" rel="noopener" target="_blank">${esc(i.attribution)}</a>` : esc(i.attribution)))
-    .join(", ");
-
-  const contactRows = [
-    k.contact.phone && `<li>${icon("phone")}<a href="tel:${esc(k.contact.phone.replace(/[^+\d]/g, ""))}">${esc(k.contact.phone)}</a></li>`,
-    k.contact.email && `<li>${icon("mail")}<a href="mailto:${esc(k.contact.email)}">${esc(k.contact.email)}</a></li>`,
-    (k.contact.address || k.contact.city) &&
-      `<li>${icon("pin")}<span>${esc([k.contact.address, k.contact.city && !k.contact.address?.includes(k.contact.city) ? k.contact.city : null].filter(Boolean).join(", "))}</span></li>`,
-  ]
-    .filter(Boolean)
-    .join("");
-
+  const where = [k.contact.city, k.contact.country].filter(Boolean).join(", ");
   const mapUrl = k.contact.mapQuery ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(k.contact.mapQuery)}` : null;
-  const social = Object.entries(k.social)
-    .map(([name, url]) => `<a href="${esc(url)}" rel="noopener" target="_blank">${esc(name.charAt(0).toUpperCase() + name.slice(1))}</a>`)
-    .join("");
-  const year = new Date(config.generatedAt).getFullYear();
+  const primary = { label: config.primaryCTA.label, href: safeHref(config.primaryCTA.href) };
+  const directionsLabel = "Get directions";
 
-  const heroInner = `
-      <p class="eyebrow">${esc(t.name === "Momentum" ? "Train with us" : [k.contact.city, k.contact.country].filter(Boolean).join(" · "))}</p>
-      <h1>${esc(config.headline)}</h1>
-      ${config.subheadline ? `<p class="lede">${esc(config.subheadline)}</p>` : ""}
-      <div class="ctas">
-        <a class="btn primary" href="${safeHref(config.primaryCTA.href)}">${esc(config.primaryCTA.label)}</a>
-        ${config.secondaryCTA ? `<a class="btn ghost" href="${safeHref(config.secondaryCTA.href)}">${esc(config.secondaryCTA.label)}</a>` : ""}
-      </div>
-      ${k.rating ? `<p class="rating">${icon("star")}<strong>${k.rating.value.toFixed(1)}</strong> from ${k.rating.count} reviews <span>(${esc(k.rating.source)})</span></p>` : ""}`;
+  const ctas = `
+    <div class="ctas">
+      <a class="btn btn-accent" href="${primary.href}">${esc(primary.label)}${icon("arrowRight", "btn-icon")}</a>
+      ${mapUrl ? `<a class="btn btn-ghost" href="${esc(mapUrl)}" target="_blank" rel="noopener">${icon("navigation", "btn-icon-l")}${directionsLabel}</a>` : ""}
+    </div>`;
+
+  // ── Hero (max 4 text elements: eyebrow, headline, subtext, CTAs)
+  const heroCopy = `
+      ${where ? `<p class="eyebrow load" style="--i:0">${esc(where)}</p>` : ""}
+      <h1 class="load" style="--i:1">${esc(config.headline)}</h1>
+      ${config.subheadline ? `<p class="lede load" style="--i:2">${esc(config.subheadline)}</p>` : ""}
+      <div class="load" style="--i:3">${ctas}</div>`;
 
   const hero =
-    t.layout === "split"
-      ? `<section class="hero split"><div class="wrap grid2"><div>${heroInner}</div>${imageOrPattern(config.images.hero, "hero-img", `${config.businessName}`)}</div></section>`
-      : t.layout === "fullbleed"
-        ? `<section class="hero full">${imageOrPattern(config.images.hero, "hero-bg", `${config.businessName}`)}<div class="scrim"></div><div class="wrap">${heroInner}</div></section>`
-        : `<section class="hero centered"><div class="wrap narrow">${heroInner}</div></section>`;
+    t.layout === "fullbleed"
+      ? `<section class="hero hero-full" id="top">
+          <div class="hero-media">${picture(im.hero, { cls: "kb", eager: true, label: config.businessName, variant: 0 })}</div>
+          <div class="hero-scrim"></div>
+          <div class="hero-inner">${heroCopy}</div>
+        </section>`
+      : `<section class="hero hero-split" id="top">
+          <div class="wrap hero-grid">
+            <div class="hero-copy">${heroCopy}</div>
+            <div class="collage load" style="--i:2">
+              <figure class="collage-a">${picture(im.hero, { cls: "kb", eager: true, sizes: "(min-width: 980px) 42vw, 90vw", label: config.businessName, variant: 0 })}</figure>
+              <figure class="collage-b drift">${picture(im.hero2, { sizes: "(min-width: 980px) 20vw, 45vw", label: "Detail photo", variant: 1 })}</figure>
+            </div>
+          </div>
+        </section>`;
+
+  // ── Ribbon (the one marquee on the page)
+  const ribbonItems = [
+    k.rating ? `${k.rating.value.toFixed(1)} rating from ${k.rating.count} reviews` : null,
+    ...k.highlights,
+    where || null,
+  ].filter((x): x is string => Boolean(x));
+  const uniqueRibbon = [...new Set(ribbonItems)];
+  const ribbon =
+    uniqueRibbon.length >= 2
+      ? `<div class="ribbon" aria-label="Highlights"><div class="ribbon-track">${[0, 1]
+          .map((n) => `<ul${n ? ' aria-hidden="true"' : ""}>${[...uniqueRibbon, ...uniqueRibbon].map((x) => `<li>${icon("sparkle", "ribbon-icon")}${esc(x)}</li>`).join("")}</ul>`)
+          .join("")}</div></div>`
+      : "";
+
+  // ── About (offset photo collage + story)
+  const aboutText =
+    k.about ?? `This is where the story of ${config.businessName} goes: who you are, what you love doing, and why people keep coming back.`;
+  const about = `
+  <section class="section about" id="about">
+    <div class="wrap about-grid">
+      <div class="about-media sr">
+        <figure class="about-main">${picture(im.about, { sizes: "(min-width: 980px) 38vw, 90vw", label: "About photo", variant: 1 })}</figure>
+        <figure class="about-inset drift">${picture(im.about2, { sizes: "(min-width: 980px) 18vw, 40vw", label: "Detail photo", variant: 2 })}</figure>
+      </div>
+      <div class="about-copy sr">
+        <h2>${esc(t.aboutTitle)}</h2>
+        <p class="body-lg">${esc(aboutText)}</p>
+        ${k.highlights.length ? `<ul class="checks">${k.highlights.map((h) => `<li>${icon("check", "check")}<span>${esc(h)}</span></li>`).join("")}</ul>` : ""}
+      </div>
+    </div>
+  </section>`;
+
+  // ── Offerings (bento: cell count = item count)
+  const items = k.offerings.length
+    ? k.offerings.slice(0, 3).map((o) => ({ title: o.title, text: o.description, placeholder: false }))
+    : k.offeringsPlaceholder.slice(0, 3).map((label) => ({
+        title: label,
+        text: `Your real ${label.toLowerCase()} will go here, written with you before launch.`,
+        placeholder: true,
+      }));
+  const offerings = `
+  <section class="section offers" id="offerings">
+    <div class="wrap">
+      <h2 class="sr">${esc(k.offeringsTitle)}</h2>
+      <div class="bento bento-${items.length}">
+        ${items
+          .map(
+            (it, i) => `
+          <article class="tile tile-${i} sr" style="--i:${i}">
+            <figure class="tile-media">${picture(im.offers[i] ?? null, { sizes: i === 0 ? "(min-width: 980px) 55vw, 90vw" : "(min-width: 980px) 35vw, 90vw", label: it.title, variant: i + 1 })}</figure>
+            <div class="tile-body">
+              <h3>${esc(it.title)}</h3>
+              <p>${esc(it.text)}</p>
+              ${it.placeholder ? `<span class="note">Sample section</span>` : ""}
+            </div>
+          </article>`,
+          )
+          .join("")}
+      </div>
+    </div>
+  </section>`;
+
+  // ── Parallax band (the page's one centred statement)
+  const band = `
+  <section class="band" aria-label="${esc(t.statement)}">
+    <div class="band-media">${picture(im.band, { sizes: "100vw", label: "Atmosphere photo", variant: 3 })}</div>
+    <div class="band-scrim"></div>
+    <p class="band-text sr">${esc(t.statement)}</p>
+  </section>`;
+
+  // ── Gallery (mosaic with varied spans)
+  const gallery = `
+  <section class="section gallery-sec" id="gallery">
+    <div class="wrap">
+      <h2 class="sr">${esc(t.galleryTitle)}</h2>
+      <div class="mosaic">
+        ${im.gallery
+          .map((g, i) => `<figure class="m m-${i} sr" style="--i:${i % 3}">${picture(g, { sizes: "(min-width: 980px) 33vw, 90vw", label: "Gallery photo", variant: i })}</figure>`)
+          .join("")}
+      </div>
+    </div>
+  </section>`;
+
+  // ── Reviews (real rating only; no invented testimonials)
+  const reviews = k.rating
+    ? `
+  <section class="section reviews" id="reviews">
+    <div class="wrap reviews-grid">
+      <div class="score sr">
+        <p class="score-num">${k.rating.value.toFixed(1)}</p>
+        ${stars(k.rating.value)}
+        <p class="score-meta">Average from ${k.rating.count} reviews</p>
+        ${mapUrl ? `<a class="link" href="${esc(mapUrl)}" target="_blank" rel="noopener">Read the reviews${icon("arrowUpRight", "link-icon")}</a>` : ""}
+      </div>
+      <div class="quotes">
+        ${[0, 1]
+          .map(
+            (i) =>
+              `<figure class="quote sr" style="--i:${i}">${icon("quotes", "quote-mark")}<blockquote>Your favourite customer review will appear here, word for word.</blockquote><figcaption>Chosen with you before launch</figcaption></figure>`,
+          )
+          .join("")}
+      </div>
+    </div>
+  </section>`
+    : "";
+
+  // ── Visit
+  const addressLine = [k.contact.address, k.contact.city && !k.contact.address?.includes(k.contact.city) ? k.contact.city : null].filter(Boolean).join(", ");
+  const contactRows = [
+    addressLine ? `<li>${icon("pin", "row-icon")}<div><p class="row-label">Address</p><p>${esc(addressLine)}</p></div></li>` : "",
+    k.contact.phone
+      ? `<li>${icon("phone", "row-icon")}<div><p class="row-label">Phone</p><p><a href="tel:${esc(k.contact.phone.replace(/[^+\d]/g, ""))}">${esc(k.contact.phone)}</a></p></div></li>`
+      : "",
+    k.contact.email
+      ? `<li>${icon("mail", "row-icon")}<div><p class="row-label">Email</p><p><a href="mailto:${esc(k.contact.email)}">${esc(k.contact.email)}</a></p></div></li>`
+      : "",
+    `<li>${icon("clock", "row-icon")}<div><p class="row-label">Opening hours</p><p class="muted">Added with you before launch</p></div></li>`,
+  ].join("");
+  const visit = `
+  <section class="section visit" id="visit">
+    <div class="wrap visit-grid">
+      <div class="visit-copy sr">
+        <h2>Find us</h2>
+        <ul class="rows">${contactRows}</ul>
+        ${mapUrl ? `<a class="btn btn-ghost-ink" href="${esc(mapUrl)}" target="_blank" rel="noopener">${icon("navigation", "btn-icon-l")}${directionsLabel}</a>` : ""}
+      </div>
+      <figure class="visit-media sr">${picture(im.visit, { sizes: "(min-width: 980px) 45vw, 90vw", label: "Location photo", variant: 2 })}</figure>
+    </div>
+  </section>`;
+
+  // ── Closing CTA (same label as the primary CTA: one label per intent)
+  const closing = `
+  <section class="closing">
+    <div class="wrap closing-inner sr">
+      <h2>${esc(t.closing)}</h2>
+      <a class="btn btn-on-deep" href="${primary.href}">${esc(primary.label)}${icon("arrowRight", "btn-icon")}</a>
+    </div>
+  </section>`;
+
+  // ── Footer
+  const social = Object.entries(k.social)
+    .map(([name, url]) => {
+      const ic = SOCIAL_ICONS[name.toLowerCase()];
+      return `<a href="${esc(url)}" target="_blank" rel="noopener" aria-label="${esc(name)}">${ic ? icon(ic, "social-icon") : esc(name.slice(0, 2))}</a>`;
+    })
+    .join("");
+  const seen = new Set<string>();
+  const credits = [config.images.hero, ...config.images.gallery]
+    .filter((i): i is ImageRef => Boolean(i?.attribution) && !seen.has(i!.attribution!) && Boolean(seen.add(i!.attribution!)))
+    .slice(0, 8)
+    .map((i) => (i.attributionUrl ? `<a href="${esc(i.attributionUrl)}" rel="noopener" target="_blank">${esc(i.attribution)}</a>` : esc(i.attribution)))
+    .join(", ");
+  const year = new Date(config.generatedAt).getFullYear();
+
+  const navLinks = `<a href="#about">About</a><a href="#offerings">${esc(k.offeringsTitle)}</a><a href="#gallery">Gallery</a><a href="#visit">Visit</a>`;
+
+  const footer = `
+  <footer class="footer">
+    <div class="wrap footer-grid">
+      <div>
+        <a class="brand brand-foot" href="#top">${monogram(config.businessName)}<span>${esc(config.businessName)}</span></a>
+        ${where ? `<p class="foot-muted">${esc(where)}</p>` : ""}
+        ${social ? `<div class="social">${social}</div>` : ""}
+      </div>
+      <nav class="foot-links" aria-label="Footer">${navLinks}</nav>
+      <div class="foot-contact">
+        ${k.contact.phone ? `<a href="tel:${esc(k.contact.phone.replace(/[^+\d]/g, ""))}">${esc(k.contact.phone)}</a>` : ""}
+        ${k.contact.email ? `<a href="mailto:${esc(k.contact.email)}">${esc(k.contact.email)}</a>` : ""}
+      </div>
+    </div>
+    <div class="wrap foot-base">
+      <span>© ${year} ${esc(config.businessName)}</span>
+      ${credits ? `<span>Photos: ${credits}</span>` : ""}
+    </div>
+  </footer>`;
+
+  const banner =
+    opts.watermark !== false
+      ? `<div class="concept"><strong>Website concept</strong> for ${esc(config.businessName)}. Not an official website: photos and some content are illustrative.</div>`
+      : "";
+
+  const nav = `
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top">${monogram(config.businessName)}<span>${esc(config.businessName)}</span></a>
+      <nav class="nav-links" aria-label="Main">${navLinks}</nav>
+      <a class="btn btn-accent btn-sm nav-cta" href="${primary.href}">${esc(primary.label)}</a>
+    </div>
+  </header>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -114,142 +416,246 @@ export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boo
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="${darkByDesign ? "dark" : "light dark"}">
 <title>${esc(config.seo.title)}</title>
 <meta name="description" content="${esc(config.seo.description)}">
 <meta property="og:title" content="${esc(config.seo.title)}">
 <meta property="og:description" content="${esc(config.seo.description)}">
+${im.hero ? `<meta property="og:image" content="${esc(im.hero.url)}">` : ""}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?${fontQuery}&display=swap" rel="stylesheet">
 <style>
-:root{--primary:${c.primary};--accent:${c.accent};--bg:${c.background};--surface:${c.surface};--text:${c.text};--muted:${muted};--border:${border};--on-primary:${onPrimary};--on-accent:${onAccent};--hf:"${fonts.heading}",Georgia,serif;--bf:"${fonts.body}",system-ui,sans-serif;color-scheme:${dark ? "dark" : "light"}}
-*{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{font-family:var(--bf);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
-a{color:inherit}
-img{display:block;max-width:100%}
-.wrap{width:min(1120px,100% - 40px);margin-inline:auto}
-.narrow{max-width:760px;text-align:center}
-h1,h2,h3{font-family:var(--hf);line-height:1.1;letter-spacing:-.01em}
-h1{font-size:clamp(2.4rem,6vw,4.4rem);font-weight:600}
-h2{font-size:clamp(1.8rem,3.5vw,2.6rem);font-weight:600;margin-bottom:.6em}
-h3{font-size:1.25rem;font-weight:600;margin-bottom:.35em}
-.icon{width:18px;height:18px;flex:none}
-.banner{background:var(--text);color:var(--bg);font-size:.8rem;text-align:center;padding:.5rem 1rem}
-.banner strong{font-weight:600}
-nav{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
-nav .wrap{display:flex;align-items:center;justify-content:space-between;height:68px;gap:1rem}
-.brand{font-family:var(--hf);font-size:1.3rem;font-weight:600;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.links{display:flex;gap:1.6rem;font-size:.92rem}
-.links a{text-decoration:none;color:var(--muted)}
-.links a:hover{color:var(--text)}
-.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 1.4rem;border-radius:999px;font-weight:600;text-decoration:none;font-size:.95rem;transition:transform .15s ease,box-shadow .15s ease}
-.btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px -10px var(--primary)}
-.btn.primary{background:var(--primary);color:var(--on-primary)}
-.btn.ghost{border:1.5px solid currentColor}
-.btn.small{padding:.55rem 1rem;font-size:.85rem}
-.hero{position:relative;overflow:hidden}
-.hero .eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:.78rem;color:var(--accent);font-weight:600;margin-bottom:1rem}
-.hero .lede{font-size:1.2rem;color:var(--muted);margin-top:1.1rem;max-width:36rem}
-.narrow .lede{margin-inline:auto}
-.ctas{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:2rem}
-.narrow .ctas{justify-content:center}
-.rating{display:flex;align-items:center;gap:.4rem;margin-top:1.6rem;font-size:.95rem}
-.narrow .rating{justify-content:center}
-.rating .icon{color:var(--accent);fill:var(--accent)}
-.rating span{color:var(--muted)}
-.hero.split{padding:5rem 0}
-.grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:3.5rem;align-items:center}
-.hero-img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:28px}
-.hero.full{min-height:86vh;display:flex;align-items:flex-end;padding:6rem 0 5rem;color:#fff}
-.hero.full .lede,.hero.full .rating span{color:rgba(255,255,255,.85)}
-.hero.full .btn.ghost{color:#fff}
-.hero-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.15) 0%,rgba(0,0,0,.65) 100%)}
-.hero.full .wrap{position:relative}
-.hero-bg.pattern{position:absolute}
-.hero.full .eyebrow{color:#fff;opacity:.85}
-.hero.full .btn.primary{background:var(--accent);color:var(--on-accent)}
-.hero.centered{padding:7rem 0 6rem;background:radial-gradient(1200px 500px at 50% -10%,color-mix(in srgb,var(--accent) 22%,transparent),transparent)}
-.pattern{background:linear-gradient(135deg,var(--primary),var(--accent));position:relative}
-.pattern::after{content:"";position:absolute;inset:0;opacity:.18;background-image:radial-gradient(circle at 1px 1px,#fff 1px,transparent 0);background-size:18px 18px}
-.p1{background:linear-gradient(135deg,var(--accent),var(--primary))}
-.p2{background:linear-gradient(200deg,var(--primary),var(--surface))}
-section.block{padding:5.5rem 0}
-section.alt{background:var(--surface)}
-.kicker{color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.14em;font-size:.75rem;margin-bottom:.8rem}
-.about{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:start}
-.about p{font-size:1.1rem;color:var(--muted)}
-.highlights{list-style:none;display:grid;gap:.9rem}
-.highlights li{display:flex;gap:.7rem;align-items:flex-start;padding:1rem 1.2rem;background:var(--bg);border:1px solid var(--border);border-radius:14px}
-.highlights .icon{color:var(--accent);margin-top:3px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.2rem;margin-top:2rem}
-.card{background:var(--bg);border:1px solid var(--border);border-radius:18px;padding:1.6rem}
-.card p{color:var(--muted);font-size:.95rem}
-.card.placeholder{border-style:dashed}
-.tag{display:inline-block;font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--text);padding:.25rem .6rem;border-radius:999px;margin-bottom:.9rem}
-.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-top:2rem}
-.gallery figure{position:relative;overflow:hidden;border-radius:18px}
-.gimg{width:100%;aspect-ratio:4/3;object-fit:cover}
-.gallery figcaption{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:#fff;background:rgba(0,0,0,.35);padding:.2rem .55rem;border-radius:999px}
-.cta-band{background:var(--primary);color:var(--on-primary);border-radius:28px;padding:3.5rem;display:flex;align-items:center;justify-content:space-between;gap:2rem;flex-wrap:wrap}
-.cta-band h2{margin:0}
-.cta-band .btn{background:var(--accent);color:var(--on-accent)}
-.contact{display:grid;grid-template-columns:1fr 1fr;gap:3rem}
-.contact ul{list-style:none;display:grid;gap:1rem;font-size:1.05rem}
-.contact li{display:flex;gap:.8rem;align-items:center}
-.contact li .icon{color:var(--accent)}
-.mapcard{border-radius:22px;border:1px solid var(--border);background:var(--surface);padding:2rem;display:flex;flex-direction:column;justify-content:space-between;min-height:220px}
-.mapcard p{color:var(--muted)}
-footer{border-top:1px solid var(--border);padding:2.5rem 0;font-size:.85rem;color:var(--muted)}
-footer .wrap{display:flex;justify-content:space-between;gap:1.5rem;flex-wrap:wrap}
-footer .social{display:flex;gap:1rem}
-@media (max-width:860px){
-  .links{display:none}
-  .grid2,.about,.contact{grid-template-columns:1fr}
-  .hero.split{padding:3rem 0}
-  .hero-img{aspect-ratio:4/3}
-  .gallery{grid-template-columns:1fr 1fr}
-  .cta-band{padding:2.2rem}
-  section.block{padding:4rem 0}
-}
-@media (max-width:520px){.gallery{grid-template-columns:1fr}.nav-cta{display:none}}
+:root{${tokenCss(light)};--hf:"${fonts.heading}",Georgia,serif;--bf:"${fonts.body}",system-ui,sans-serif;--hw:${t.headingWeight};--r:18px;--ease:cubic-bezier(.16,1,.3,1)}
+${dark ? `@media (prefers-color-scheme:dark){:root{${tokenCss(dark)}}}` : ""}
+${CSS}
 </style>
 </head>
 <body>
-${opts.watermark !== false ? `<div class="banner"><strong>Website concept</strong> prepared for ${esc(config.businessName)} — not an official website. Content and photos are illustrative.</div>` : ""}
-<nav><div class="wrap">
-  <a class="brand" href="#top">${esc(config.businessName)}</a>
-  <div class="links"><a href="#about">About</a><a href="#offerings">${esc(k.offeringsTitle)}</a><a href="#gallery">Gallery</a><a href="#contact">Contact</a></div>
-  <a class="btn primary small nav-cta" href="${safeHref(config.primaryCTA.href)}">${esc(config.primaryCTA.label)}</a>
-</div></nav>
-<main id="top">
+${banner}
+${nav}
+<main>
 ${hero}
-<section class="block" id="about"><div class="wrap about">
-  <div><p class="kicker">About</p><h2>${esc(config.businessName)}</h2>${k.about ? `<p>${esc(k.about)}</p>` : `<p>Your story goes here — who you are, what makes you different, and why locals keep coming back.</p>`}</div>
-  ${k.highlights.length ? `<ul class="highlights">${k.highlights.map((h) => `<li>${icon("check")}<span>${esc(h)}</span></li>`).join("")}</ul>` : ""}
-</div></section>
-<section class="block alt" id="offerings"><div class="wrap">
-  <p class="kicker">${esc(t.name)}</p><h2>${esc(k.offeringsTitle)}</h2>
-  <div class="cards">${offerings}</div>
-</div></section>
-<section class="block" id="gallery"><div class="wrap">
-  <p class="kicker">Gallery</p><h2>A look inside</h2>
-  <div class="gallery">${gallery}</div>
-</div></section>
-<section class="block" id="contact"><div class="wrap">
-  <div class="cta-band"><h2>${esc(config.primaryCTA.label)}</h2><a class="btn" href="${safeHref(config.primaryCTA.href)}">${esc(k.contact.phone ? "Call us" : "Get in touch")}</a></div>
-  <div class="contact" style="margin-top:4rem">
-    <div><p class="kicker">Visit &amp; contact</p><h2>Find us</h2><ul>${contactRows || "<li>Contact details will be added here.</li>"}</ul></div>
-    <div class="mapcard"><div><h3>${esc(k.contact.city ?? "Location")}</h3><p>${esc(k.contact.address ?? "")}</p></div>${mapUrl ? `<a class="btn primary" href="${esc(mapUrl)}" target="_blank" rel="noopener">${icon("pin")} Open in Maps</a>` : ""}</div>
-  </div>
-</div></section>
+${ribbon}
+${about}
+${offerings}
+${band}
+${gallery}
+${reviews}
+${visit}
+${closing}
 </main>
-<footer><div class="wrap">
-  <span>© ${year} ${esc(config.businessName)}</span>
-  ${social ? `<span class="social">${social}</span>` : ""}
-  ${credits ? `<span>Photos: ${credits}</span>` : ""}
-</div></footer>
+${footer}
 </body>
 </html>`;
 }
+
+// ───────────────────────── stylesheet ─────────────────────────
+
+const CSS = `
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{font-family:var(--bf);background:var(--bg);color:var(--ink);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{display:block;width:100%;height:100%;object-fit:cover}
+a{color:inherit;text-decoration:none}
+.wrap{width:min(1240px,100% - 48px);margin-inline:auto}
+h1,h2,h3{font-family:var(--hf);font-weight:var(--hw);line-height:1.08;letter-spacing:-.015em;text-wrap:balance}
+h1{font-size:clamp(2.5rem,5.4vw,4.6rem)}
+h2{font-size:clamp(2rem,3.6vw,3.1rem);margin-bottom:1.2rem}
+h3{font-size:1.35rem;line-height:1.2}
+p{text-wrap:pretty}
+.muted{color:var(--muted)}
+svg{flex:none}
+
+/* concept banner + nav */
+.concept{background:var(--deep);color:var(--on-deep);font-size:.78rem;text-align:center;padding:.5rem 1rem}
+.nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 78%,transparent);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%);border-bottom:1px solid transparent}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;height:70px}
+.brand{display:inline-flex;align-items:center;gap:.7rem;font-family:var(--hf);font-weight:var(--hw);font-size:1.2rem;min-width:0}
+.brand span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mark{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-family:var(--bf);font-weight:700;font-size:.8rem;letter-spacing:.04em;flex:none}
+.nav-links{display:flex;gap:2rem;font-size:.93rem}
+.nav-links a{color:var(--muted);transition:color .25s}
+.nav-links a:hover{color:var(--ink)}
+
+/* buttons: one pill system across the page */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;height:52px;padding:0 1.6rem;border-radius:999px;font-weight:600;font-size:.97rem;white-space:nowrap;transition:transform .35s var(--ease),background-color .25s,color .25s,border-color .25s,box-shadow .35s var(--ease)}
+.btn:active{transform:translateY(1px) scale(.98)}
+.btn-sm{height:42px;padding:0 1.15rem;font-size:.88rem}
+.btn-accent{background:var(--accent);color:var(--on-accent);box-shadow:0 10px 30px -12px color-mix(in srgb,var(--accent) 70%,transparent)}
+.btn-accent:hover{transform:translateY(-2px);box-shadow:0 18px 40px -14px color-mix(in srgb,var(--accent) 80%,transparent)}
+.btn-ghost{border:1.5px solid color-mix(in srgb,currentColor 45%,transparent)}
+.btn-ghost:hover{border-color:currentColor;transform:translateY(-2px)}
+.btn-ghost-ink{border:1.5px solid var(--line);color:var(--ink);margin-top:2rem}
+.btn-ghost-ink:hover{border-color:var(--ink)}
+.btn-on-deep{background:var(--on-deep);color:var(--deep)}
+.btn-on-deep:hover{transform:translateY(-2px)}
+.btn-icon,.btn-icon-l{width:18px;height:18px}
+.btn-icon{transition:transform .35s var(--ease)}
+.btn:hover .btn-icon{transform:translateX(3px)}
+.ctas{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:2.1rem}
+
+/* hero */
+.hero{position:relative}
+.eyebrow{font-size:.78rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:1.1rem}
+.lede{font-size:clamp(1.05rem,1.4vw,1.2rem);color:var(--muted);margin-top:1.2rem;max-width:34rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hero-full{min-height:calc(100dvh - 104px);display:flex;align-items:flex-end;overflow:hidden;color:#fafafa;isolation:isolate}
+.hero-full .eyebrow{color:#fafafa;opacity:.85}
+.hero-full .lede{color:rgba(250,250,250,.86)}
+.hero-media{position:absolute;inset:-8% 0 0;z-index:-2;overflow:hidden}
+.hero-scrim{position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(10,10,10,.1) 0%,rgba(10,10,10,.3) 45%,rgba(10,10,10,.8) 100%)}
+.hero-inner{width:min(1240px,100% - 48px);margin-inline:auto;padding:6rem 0 5.5rem}
+.hero-inner>*{max-width:760px}
+.hero-full .btn-accent{box-shadow:none}
+.hero-split{padding:clamp(2.5rem,6vw,5rem) 0 clamp(3rem,7vw,6rem)}
+.hero-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:clamp(2rem,5vw,5rem);align-items:center}
+.collage{position:relative;padding:0 0 12% 10%}
+.collage-a{aspect-ratio:4/5;border-radius:var(--r);overflow:hidden;box-shadow:0 30px 70px -35px color-mix(in srgb,var(--deep) 60%,transparent)}
+.collage-b{position:absolute;left:0;bottom:0;width:44%;aspect-ratio:1;border-radius:var(--r);overflow:hidden;border:6px solid var(--bg);box-shadow:0 20px 50px -25px color-mix(in srgb,var(--deep) 55%,transparent)}
+
+/* ribbon marquee */
+.ribbon{border-block:1px solid var(--line);overflow:hidden;background:var(--surface)}
+.ribbon-track{display:flex;width:max-content}
+.ribbon ul{display:flex;list-style:none;gap:3rem;padding:1.1rem 1.5rem 1.1rem 0;white-space:nowrap}
+.ribbon li{display:flex;align-items:center;gap:.75rem;font-family:var(--hf);font-size:1.15rem}
+.ribbon-icon{width:18px;height:18px;color:var(--accent)}
+
+/* sections */
+.section{padding:clamp(4.5rem,9vw,8rem) 0}
+.body-lg{font-size:1.12rem;color:var(--muted);max-width:60ch}
+.about-grid{display:grid;grid-template-columns:5fr 6fr;gap:clamp(2.5rem,6vw,6rem);align-items:center}
+.about-media{position:relative;padding:0 14% 14% 0}
+.about-main{aspect-ratio:4/5;border-radius:var(--r);overflow:hidden}
+.about-inset{position:absolute;right:0;bottom:0;width:48%;aspect-ratio:4/5;border-radius:var(--r);overflow:hidden;border:6px solid var(--bg)}
+.checks{list-style:none;display:grid;gap:.9rem;margin-top:2rem}
+.checks li{display:flex;gap:.8rem;align-items:flex-start;font-size:1.02rem}
+.check{width:22px;height:22px;padding:4px;border-radius:50%;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);margin-top:2px}
+
+.offers{background:var(--surface)}
+.bento{display:grid;gap:1.25rem;margin-top:1rem}
+.bento-3{grid-template-columns:1.35fr 1fr;grid-template-rows:auto auto}
+.bento-3 .tile-0{grid-row:1/3}
+.bento-2{grid-template-columns:1fr 1fr}
+.tile{background:var(--bg);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;transition:transform .5s var(--ease),box-shadow .5s var(--ease)}
+.tile:hover{transform:translateY(-4px);box-shadow:0 26px 60px -34px color-mix(in srgb,var(--deep) 55%,transparent)}
+.tile-media{overflow:hidden;aspect-ratio:16/9}
+.tile-0 .tile-media{aspect-ratio:auto;flex:1;min-height:320px}
+.tile-media>*{transition:transform 1.2s var(--ease)}
+.tile:hover .tile-media>*{transform:scale(1.05)}
+.tile-body{padding:1.5rem 1.6rem 1.7rem}
+.tile-body p{color:var(--muted);margin-top:.45rem;font-size:.97rem}
+.note{display:inline-block;margin-top:.9rem;font-size:.74rem;font-weight:600;color:var(--accent);border:1px dashed color-mix(in srgb,var(--accent) 60%,transparent);padding:.2rem .6rem;border-radius:999px}
+
+.band{position:relative;min-height:72vh;display:grid;place-items:center;overflow:hidden;isolation:isolate;color:#fafafa;text-align:center}
+.band-media{position:absolute;inset:-15% 0;z-index:-2}
+.band-scrim{position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at center,rgba(10,10,10,.35),rgba(10,10,10,.62))}
+.band-text{font-family:var(--hf);font-weight:var(--hw);font-size:clamp(2.2rem,5.5vw,4.8rem);line-height:1.1;max-width:16ch;padding:0 24px;text-wrap:balance}
+
+.mosaic{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:clamp(150px,17vw,230px);gap:1rem;margin-top:1rem}
+.m{border-radius:var(--r);overflow:hidden}
+.m>*{transition:transform 1.2s var(--ease)}
+.m:hover>*{transform:scale(1.06)}
+.m-0{grid-column:span 2;grid-row:span 2}.m-1,.m-4,.m-5{grid-column:span 2}
+
+.reviews-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:clamp(2rem,6vw,6rem);align-items:center}
+.score-num{font-family:var(--hf);font-weight:var(--hw);font-size:clamp(5rem,11vw,8.5rem);line-height:.9;letter-spacing:-.03em}
+.stars{display:flex;gap:.2rem;margin-top:1rem;color:var(--accent)}
+.star{width:24px;height:24px}
+.star-empty{opacity:.45}
+.score-meta{color:var(--muted);margin-top:.7rem}
+.link{display:inline-flex;align-items:center;gap:.35rem;margin-top:1.4rem;font-weight:600;color:var(--accent);border-bottom:1.5px solid currentColor;padding-bottom:2px}
+.link-icon{width:16px;height:16px}
+.quotes{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+.quote{border:1.5px dashed var(--line);border-radius:var(--r);padding:1.7rem}
+.quote:nth-child(2){margin-top:3rem}
+.quote-mark{width:30px;height:30px;color:var(--accent);opacity:.8}
+.quote blockquote{font-family:var(--hf);font-size:1.2rem;line-height:1.35;margin-top:.9rem}
+.quote figcaption{font-size:.85rem;color:var(--muted);margin-top:1rem}
+
+.visit{background:var(--surface)}
+.visit-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:clamp(2rem,6vw,6rem);align-items:center}
+.rows{list-style:none;display:grid;gap:1.4rem;margin-top:1.2rem}
+.rows li{display:flex;gap:1rem;align-items:flex-start}
+.row-icon{width:24px;height:24px;color:var(--accent);margin-top:2px}
+.row-label{font-size:.82rem;color:var(--muted)}
+.rows a:hover{color:var(--accent)}
+.visit-media{aspect-ratio:5/4;border-radius:var(--r);overflow:hidden}
+
+.closing{padding:clamp(4rem,8vw,6.5rem) 0;background:var(--deep);color:var(--on-deep)}
+.closing-inner{display:flex;align-items:center;justify-content:space-between;gap:2rem;flex-wrap:wrap}
+.closing h2{margin:0;font-size:clamp(2.2rem,4.5vw,3.8rem)}
+
+.footer{background:var(--deep);color:var(--on-deep);border-top:1px solid color-mix(in srgb,var(--on-deep) 12%,transparent);padding:3.5rem 0 2rem}
+.footer-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:2rem}
+.brand-foot{color:var(--on-deep)}
+.foot-muted{opacity:.65;margin-top:.8rem;font-size:.92rem}
+.social{display:flex;gap:.8rem;margin-top:1.2rem}
+.social a{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;border:1px solid color-mix(in srgb,var(--on-deep) 22%,transparent);transition:background-color .25s;font-size:.75rem;text-transform:capitalize}
+.social a:hover{background:color-mix(in srgb,var(--on-deep) 10%,transparent)}
+.social-icon{width:20px;height:20px}
+.foot-links,.foot-contact{display:grid;gap:.6rem;align-content:start;font-size:.95rem}
+.foot-links a,.foot-contact a{opacity:.8}
+.foot-links a:hover,.foot-contact a:hover{opacity:1}
+.foot-base{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-top:3rem;padding-top:1.5rem;border-top:1px solid color-mix(in srgb,var(--on-deep) 12%,transparent);font-size:.8rem;opacity:.65}
+.foot-base a{text-decoration:underline;text-underline-offset:2px}
+
+/* photo placeholders (until licensed photos are attached) */
+.ph{position:relative;width:100%;height:100%;display:grid;place-items:center;color:rgba(255,255,255,.7);overflow:hidden}
+.ph-icon{width:34px;height:34px;opacity:.55}
+.ph-0{background:radial-gradient(120% 90% at 20% 10%,color-mix(in srgb,var(--accent) 55%,var(--deep)) 0%,var(--deep) 62%)}
+.ph-1{background:radial-gradient(110% 80% at 80% 20%,color-mix(in srgb,var(--accent) 45%,var(--deep)) 0%,color-mix(in srgb,var(--deep) 85%,var(--accent)) 100%)}
+.ph-2{background:linear-gradient(160deg,color-mix(in srgb,var(--deep) 85%,var(--accent)) 0%,color-mix(in srgb,var(--accent) 45%,var(--deep)) 100%)}
+.ph-3{background:radial-gradient(90% 90% at 50% 100%,color-mix(in srgb,var(--accent) 50%,var(--deep)) 0%,var(--deep) 72%)}
+.ph::after{content:"";position:absolute;inset:0;opacity:.12;background-image:radial-gradient(circle at 1px 1px,#fff 1px,transparent 0);background-size:16px 16px}
+
+/* motion: every animation is gated behind the reduced-motion preference */
+@media (prefers-reduced-motion:no-preference){
+  .load{animation:rise 1.1s var(--ease) both;animation-delay:calc(var(--i,0) * 110ms + 120ms)}
+  .kb{animation:kenburns 22s ease-out both}
+  .ribbon-track{animation:marquee 44s linear infinite}
+  .ribbon:hover .ribbon-track{animation-play-state:paused}
+  @keyframes rise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+  @keyframes kenburns{from{transform:scale(1.12)}to{transform:scale(1)}}
+  @keyframes marquee{to{transform:translateX(-50%)}}
+
+  @supports (animation-timeline:view()){
+    /* ranges finish while the element is still entering, so content near the page end always completes */
+    .sr{animation:reveal linear both;animation-timeline:view();animation-range:entry 0% entry 75%}
+    .mosaic .sr,.bento .sr,.quotes .sr{animation-range:entry calc(var(--i,0) * 8%) entry calc(60% + var(--i,0) * 12%)}
+    @keyframes reveal{from{opacity:0;transform:translateY(48px) scale(.98)}to{opacity:1;transform:none}}
+
+    .hero-media{animation:hero-par linear both;animation-timeline:scroll(root);animation-range:0 100vh}
+    @keyframes hero-par{to{transform:translateY(18%)}}
+    .band-media{animation:band-par linear both;animation-timeline:view();animation-range:cover}
+    @keyframes band-par{from{transform:translateY(-12%)}to{transform:translateY(12%)}}
+    .drift{animation:drift linear both;animation-timeline:view();animation-range:cover}
+    @keyframes drift{from{transform:translateY(40px)}to{transform:translateY(-40px)}}
+
+    .nav{animation:nav-solid linear both;animation-timeline:scroll(root);animation-range:0 160px}
+    @keyframes nav-solid{to{background:color-mix(in srgb,var(--bg) 94%,transparent);border-bottom-color:var(--line)}}
+  }
+}
+
+/* responsive */
+@media (max-width:980px){
+  .nav-links{display:none}
+  .hero-grid,.about-grid,.reviews-grid,.visit-grid{grid-template-columns:1fr}
+  .collage{padding:0 0 10% 12%;max-width:560px}
+  .about-media{max-width:560px}
+  .footer-grid{grid-template-columns:1fr 1fr}
+}
+@media (max-width:720px){
+  .wrap,.hero-inner{width:calc(100% - 32px)}
+  .hero-inner{padding:4.5rem 0 3.5rem}
+  .bento-3,.bento-2{grid-template-columns:1fr}
+  .bento-3 .tile-0{grid-row:auto}
+  .tile-0 .tile-media{min-height:240px}
+  .mosaic{grid-template-columns:1fr 1fr;grid-auto-rows:170px}
+  .m-0{grid-row:span 1}
+  .quotes{grid-template-columns:1fr}
+  .quote:nth-child(2){margin-top:0}
+  .footer-grid{grid-template-columns:1fr}
+  .nav-cta{display:none}
+  .ctas .btn{flex:1 1 100%}
+}
+`;

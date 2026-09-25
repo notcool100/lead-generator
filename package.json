@@ -46,6 +46,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@phosphor-icons/core": "^2.1.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/mailparser": "^3.4.6",
