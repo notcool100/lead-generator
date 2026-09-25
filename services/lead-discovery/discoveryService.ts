@@ -154,11 +154,17 @@ export async function discoverLeadsForCampaign(campaignId: string, providerOverr
     }
   }
 
+  // A failing source is not "no more results": only mark exhausted when every source finished cleanly.
+  if (failedSources.size) exhausted = false;
   await prisma.campaign.update({ where: { id: campaignId }, data: { discoveryCursor: exhausted ? CURSOR_DONE : pageToken } });
 
   if (failedSources.size) {
     await audit({ action: "discovery.source_failed", entityType: "campaign", entityId: campaignId, metadata: { failed: [...failedSources] } });
   }
   logger.info({ campaignId, created, duplicates, exhausted, provider: provider.name, failedSources: [...failedSources] }, "lead discovery batch finished");
+  if (created === 0 && duplicates === 0 && failedSources.size) {
+    // Nothing found because sources failed: fail the job so it is visible and retried with backoff.
+    throw new Error(`All lead sources failed: ${[...failedSources].join(" | ")}`);
+  }
   return { created, duplicates, next, exhausted };
 }

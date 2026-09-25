@@ -68,3 +68,13 @@ describe("OpenStreetMapProvider", () => {
     expect(b.socialLinks?.instagram).toBe("https://instagram.com/beanthere");
   });
 });
+
+describe("ClaudeCodeProvider schema", () => {
+  it("never sends a $schema meta URI to the CLI", async () => {
+    const { z } = await import("zod");
+    const raw = z.toJSONSchema(z.object({ a: z.string() }), { target: "draft-7" }) as Record<string, unknown>;
+    const { $schema, ...rest } = raw;
+    expect($schema).toBeDefined(); // zod adds it...
+    expect(rest).not.toHaveProperty("$schema"); // ...and the provider strips it
+  });
+});

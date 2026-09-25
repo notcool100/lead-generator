@@ -33,7 +33,14 @@ interface OsmElement {
   tags?: Record<string, string>;
 }
 
-const geocodeCache = new Map<string, [number, number, number, number]>();
+/** Search area: city centre + radius (big city boundaries make Overpass time out). */
+interface Area {
+  lat: number;
+  lon: number;
+  radius: number;
+}
+const MAX_RADIUS_M = 7000;
+const geocodeCache = new Map<string, Area>();
 
 export class OpenStreetMapProvider implements LeadProvider {
   readonly name = "openstreetmap";
@@ -43,30 +50,34 @@ export class OpenStreetMapProvider implements LeadProvider {
     this.userAgent = `LeadGenerator/1.0 (${contact || "website-preview-tool"})`;
   }
 
-  private async geocode(q: BusinessSearchQuery): Promise<[number, number, number, number]> {
+  private async geocode(q: BusinessSearchQuery): Promise<Area> {
     const place = [q.city, q.region, q.country].filter(Boolean).join(", ");
     const cached = geocodeCache.get(place);
     if (cached) return cached;
     const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q: place, format: "json", limit: "1" })}`;
     const res = await fetch(url, { headers: { "User-Agent": this.userAgent, "Accept-Language": "en" }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new LeadProviderError(`Nominatim ${res.status}`, res.status >= 500 || res.status === 429);
-    const data = (await res.json()) as { boundingbox: [string, string, string, string] }[];
+    const data = (await res.json()) as { lat: string; lon: string; boundingbox: [string, string, string, string] }[];
     if (!data[0]) throw new LeadProviderError(`Location not found on OpenStreetMap: ${place}`, false);
     const [s, n, w, e] = data[0].boundingbox.map(Number);
-    // Cap very large areas (whole countries) to keep Overpass queries polite.
-    const bbox: [number, number, number, number] = [s, w, n, e];
-    geocodeCache.set(place, bbox);
-    return bbox;
+    const lat = Number(data[0].lat);
+    const lon = Number(data[0].lon);
+    // Half the diagonal of the place's bounding box, capped so large cities stay fast.
+    const dLat = (n - s) * 111_000;
+    const dLon = (e - w) * 111_000 * Math.cos((lat * Math.PI) / 180);
+    const area: Area = { lat, lon, radius: Math.round(Math.min(MAX_RADIUS_M, Math.max(1500, Math.hypot(dLat, dLon) / 2))) };
+    geocodeCache.set(place, area);
+    return area;
   }
 
-  private buildQuery(category: string, bbox: [number, number, number, number], limit: number) {
+  private buildQuery(category: string, area: Area, limit: number) {
     const c = category.toLowerCase();
     const tags = CATEGORY_TAGS.find((t) => t.match.test(c))?.tags;
-    const box = bbox.join(",");
+    const box = `around:${area.radius},${area.lat.toFixed(5)},${area.lon.toFixed(5)}`;
     const filters = tags
       ? tags.map(([k, v]) => `nwr["${k}"="${v}"]["name"](${box});`).join("\n")
       : `nwr["name"~"${c.replace(/[^a-z0-9 ]/g, "")}",i]["shop"](${box});\nnwr["name"~"${c.replace(/[^a-z0-9 ]/g, "")}",i]["amenity"](${box});`;
-    return `[out:json][timeout:60];(\n${filters}\n);out center tags ${Math.min(limit, 500)};`;
+    return `[out:json][timeout:40];(\n${filters}\n);out center tags ${Math.min(limit, 400)};`;
   }
 
   private async overpass(query: string): Promise<OsmElement[]> {
@@ -77,7 +88,7 @@ export class OpenStreetMapProvider implements LeadProvider {
           method: "POST",
           headers: { "User-Agent": this.userAgent, "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({ data: query }),
-          signal: AbortSignal.timeout(75_000),
+          signal: AbortSignal.timeout(50_000),
         });
         const text = await res.text();
         if (!res.ok || !text.trim().startsWith("{")) throw new Error(`Overpass ${res.status} at ${new URL(url).host}`);
@@ -132,8 +143,8 @@ export class OpenStreetMapProvider implements LeadProvider {
     const key = JSON.stringify([q.category, q.city, q.region, q.country]);
     let all = this.resultCache.get(key);
     if (!all) {
-      const bbox = await this.geocode(q);
-      const elements = await this.overpass(this.buildQuery(q.category, bbox, 500));
+      const area = await this.geocode(q);
+      const elements = await this.overpass(this.buildQuery(q.category, area, 400));
       // Businesses with contact details first — they are actionable.
       all = elements
         .map((el) => this.normalize(el, q.category, q))

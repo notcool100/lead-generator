@@ -50,7 +50,9 @@ export class ClaudeCodeProvider implements AIProvider {
 
   async generateJson<T>(req: GenerateJsonRequest<T>, opts: ClaudeCodeRunOptions = {}): Promise<GenerateJsonResult<T>> {
     const model = this.modelFor(req.tier);
-    const schema = z.toJSONSchema(req.schema, { target: "draft-2020-12" });
+    // The CLI validates --json-schema itself and rejects the "$schema" meta-schema URI, so drop it.
+    const { $schema: _meta, ...schema } = z.toJSONSchema(req.schema, { target: "draft-7" }) as Record<string, unknown>;
+    void _meta;
     const tools = opts.tools ?? [];
     const args = [
       "-p",
