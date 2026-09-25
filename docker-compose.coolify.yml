@@ -4,7 +4,8 @@
 x-app-env: &app-env
   NODE_ENV: production
   DATABASE_URL: ${DATABASE_URL}
-  REDIS_URL: redis://redis:6379
+  # Unique service name: plain "redis" collides with other Redis containers on the shared coolify network.
+  REDIS_URL: redis://leadgen-redis:6379
   APP_URL: ${APP_URL:-https://ai-lead.ubucknepal.com}
   NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
   AI_PROVIDER: ${AI_PROVIDER:-claude_code}
@@ -44,7 +45,7 @@ services:
     expose: ["3000"]
     volumes: [previews:/app/storage/previews]
     depends_on:
-      redis: { condition: service_healthy }
+      leadgen-redis: { condition: service_healthy }
     networks: [default, coolify]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
@@ -62,7 +63,7 @@ services:
       SERVICE_NAME: worker
     volumes: [previews:/app/storage/previews]
     depends_on:
-      redis: { condition: service_healthy }
+      leadgen-redis: { condition: service_healthy }
     networks: [default, coolify]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/"]
@@ -71,7 +72,7 @@ services:
       retries: 5
       start_period: 60s
 
-  redis:
+  leadgen-redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     volumes: [redisdata:/data]
