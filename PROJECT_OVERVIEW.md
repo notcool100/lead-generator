@@ -1,6 +1,6 @@
 # AI Lead Generator — Project Overview
 
-_Last updated: 25 September 2026_
+_Last updated: 25 September 2026 (evening)_
 
 ## 1. What this project is
 
@@ -112,9 +112,13 @@ Every step runs as a **background job** (BullMQ + Redis) in a separate **worker*
 ### 4.5 Website previews
 - [x] 9 templates: restaurant, café, hotel, salon, gym, dentist, event venue, real estate, professional services
 - [x] The AI fills a typed JSON config; templates render static HTML with every value escaped
-- [x] Unknown menus and services are shown as clearly labelled placeholders, never invented
+- [x] **Redesigned, photo-led pages with 10 sections:** sticky header with monogram, hero (full-screen photo or split photo collage), highlights ribbon, "About" collage, menu/services bento, parallax statement band, gallery mosaic, reviews block (real rating and stars only), "Find us" contact section, closing call to action, and a full footer
+- [x] Each category has its own colour palette and font pair (the gym is dark by design), plus automatic dark mode for every template
+- [x] **CSS-only motion:** hero fade-in and slow zoom, parallax, scroll reveals, highlights marquee and hover effects. Everything switches off for visitors who prefer reduced motion
+- [x] Unknown menus, services, opening hours and reviews are shown as clearly labelled samples, never invented
 - [x] "Website concept, not an official website" banner, a strict Content Security Policy, and no JavaScript
-- [x] Licensed stock photos (Unsplash, with attribution) when a key is configured; otherwise styled patterns
+- [x] Licensed stock photos per page section from **Unsplash** or **Pexels** (needs a free key), varied per business, cached, and credited in the footer. Without a key, on-brand gradient placeholders are shown
+- [x] Icons from the Phosphor icon library, and a responsive layout tested at desktop and phone width
 - [x] Served at `https://ai-lead.ubucknepal.com/p/<slug>`; subdomain previews are supported
 
 ### 4.6 Outreach and compliance
@@ -137,13 +141,19 @@ Every step runs as a **background job** (BullMQ + Redis) in a separate **worker*
   - out-of-office auto-replies → ignored
 - [x] Webhook endpoint for Resend and generic HMAC-signed events
 - [x] "Send test email" button in Settings
+- [x] **Deliverability set up on the mail server:**
+  - Reverse DNS for the VPS (IPv4 `217.216.58.116` and IPv6 `2400:d321:2337:9476::1`) points to `mail.ubucknepal.com`
+  - Cloudflare `AAAA` record for `mail.ubucknepal.com`
+  - mailcow's outgoing mail name set to `mail.ubucknepal.com` (`smtp_helo_name` in `data/conf/postfix/extra.cf`; this applies to every domain on that server)
+  - Port25 independent check: **SPF, reverse DNS and DKIM all pass**. DMARC record in place
 
 ### 4.8 Deployment
 - [x] Dockerfile (includes the Claude Code CLI) and `docker-compose.coolify.yml` (web + worker + Redis)
 - [x] Deployed in Coolify (project **AI-Lead-Generator**, environment _production_) from the private GitHub repo `notcool100/lead-generator` via the **anjal-github** app
 - [x] Uses the existing Coolify PostgreSQL. Migrations and the admin seed run automatically on start
 - [x] Health checks for the web app (`/api/health`, which checks the database and Redis) and the worker (port 3001)
-- [x] Domain `ai-lead.ubucknepal.com`, with HTTPS via Let's Encrypt (Traefik)
+- [x] Domain `ai-lead.ubucknepal.com` live, with HTTPS via Let's Encrypt (Traefik)
+- [x] Claude runs in production on the Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`), verified from inside the worker
 
 ---
 
@@ -153,12 +163,15 @@ Every step runs as a **background job** (BullMQ + Redis) in a separate **worker*
 |---|---|---|
 | App containers (web, worker, Redis) | ✅ healthy | — |
 | Database migrations and admin user | ✅ done | — |
+| Domain `ai-lead.ubucknepal.com` + HTTPS | ✅ live | — |
+| Claude in production (subscription token) | ✅ working | — |
 | Mail (SMTP + IMAP) | ✅ working | — |
-| DNS `ai-lead.ubucknepal.com` | ⚠️ missing | Add Cloudflare record `A ai-lead 217.216.58.116` (DNS only) |
-| Claude in production | ⚠️ token missing | Run `claude setup-token` and set `CLAUDE_CODE_OAUTH_TOKEN` in Coolify |
-| Reverse DNS (PTR) of the VPS | ⚠️ `vmi3379476.contaboserver.net` | Set it to `mail.adyatech.com.np` in the Contabo panel (important for landing in inboxes) |
+| Reverse DNS + mail server name (`mail.ubucknepal.com`) | ✅ done, SPF/reverse DNS/DKIM pass | — |
+| Preview redesign | ⚠️ committed locally, not pushed or deployed | Push to GitHub and redeploy in Coolify |
+| Preview photos | ⚠️ no key yet (placeholders shown) | Add `UNSPLASH_ACCESS_KEY` or `PEXELS_API_KEY` (free), then **Regenerate** existing previews |
 | Business postal address in the email footer | ⚠️ empty | Settings → Outreach compliance |
 | Security clean-up | ⚠️ | Change the VPS root password (it was shared in chat), restrict the mailcow API key (it currently skips IP checks), revoke the Coolify deploy token |
+| README | ⚠️ partly out of date | Update the setup sections for Claude subscription, SMTP/IMAP and Coolify |
 | Google Maps source | ⏸ optional | Add `GOOGLE_PLACES_API_KEY` |
 
 ---
@@ -177,7 +190,7 @@ Every step runs as a **background job** (BullMQ + Redis) in a separate **worker*
 7. **User management page.** Invite team members, set roles, reset passwords (currently only the seeded admin exists).
 8. **Scheduled campaigns.** Automatically discover the next 20 leads on a schedule (daily/weekly) until the campaign limit is reached.
 9. **More templates and variants per category**, plus a template editor and brand colour picker.
-10. **Image handling.** Business-provided uploads and licensed stock photos per section, with license metadata on each image.
+10. **Business photo uploads.** Let the owner upload their own photos to replace the stock ones (stock photos per section are already done).
 11. **A/B testing of subject lines and openers**, with reply-rate statistics per variant.
 12. **Lead import/export** (CSV) and a CRM push (HubSpot, Pipedrive, Google Sheets).
 13. **Deliverability dashboard.** Bounce and complaint rates per day, a warm-up schedule that raises limits automatically, and blocklist checks.
