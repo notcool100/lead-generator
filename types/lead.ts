@@ -29,6 +29,8 @@ export interface BusinessSearchQuery {
   region?: string | null;
   city?: string | null;
   limit: number;
+  /** Total leads the campaign may still take (providers that pay per crawl size use it). */
+  maxTotal?: number;
   /** Opaque provider cursor for pagination. */
   pageToken?: string | null;
 }

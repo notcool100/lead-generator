@@ -1,9 +1,12 @@
 import { prisma, type Prisma, type WebsiteStatus } from "@/lib/db";
 import { leadEvent } from "@/lib/audit";
+import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 import { extractDomain, normalizeEmail } from "@/lib/normalize";
 import { humanize } from "@/lib/utils";
 import type { NextAction } from "@/queue/queues";
 import { getSettings } from "@/services/compliance/settings";
+import { findFacebookEmail } from "@/services/enrichment/facebookEmail";
 import { scoreLead } from "@/services/scoring/leadScore";
 import { WebsiteAnalyzer } from "./WebsiteAnalyzer";
 
@@ -70,7 +73,22 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
   const siteEmail = !lead.email ? normalizeEmail(result.signals?.emails.find((e) => !e.endsWith(".png") && !e.includes("sentry")) ?? null) : null;
   const social = { ...((lead.socialLinks as Record<string, string> | null) ?? {}), ...(result.signals?.socialLinks ?? {}) };
   const websiteUrl = result.discovered ? result.finalUrl : lead.websiteUrl;
-  const email = lead.email ?? siteEmail;
+  const campaign = lead.campaign;
+  const targetStatuses = campaign?.targetWebsiteStatuses ?? ["no_website", "poor_website", "outdated"];
+
+  // No email on the site (or no site at all): try the business's Facebook page — paid, so only for targeted leads.
+  let facebookEmail: string | null = null;
+  const e = env();
+  if (!lead.email && !siteEmail && !lead.doNotContact && targetStatuses.includes(result.status) && e.APIFY_API_TOKEN && e.APIFY_FACEBOOK_ENRICHMENT === "true") {
+    try {
+      const fb = await findFacebookEmail(e.APIFY_API_TOKEN, { businessName: lead.businessName, city: lead.city, country: lead.country, facebookUrl: social.facebook });
+      facebookEmail = fb.email;
+      if (fb.facebookUrl && !social.facebook) social.facebook = fb.facebookUrl;
+    } catch (err) {
+      logger.warn({ leadId, err: err instanceof Error ? err.message : err }, "facebook email lookup failed");
+    }
+  }
+  const email = lead.email ?? siteEmail ?? facebookEmail;
 
   const { score } = scoreLead({
     websiteStatus: result.status,
@@ -82,11 +100,10 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
     hasSocial: Object.keys(social).length > 0,
   });
 
-  const campaign = lead.campaign;
   const q = qualifies({
     websiteStatus: result.status,
     leadScore: score,
-    targetStatuses: campaign?.targetWebsiteStatuses ?? ["no_website", "poor_website", "outdated"],
+    targetStatuses,
     minScore: campaign?.minLeadScore ?? general.qualifyMinScore,
     doNotContact: lead.doNotContact,
   });
@@ -122,6 +139,7 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
     leadScore: score,
   });
   if (siteEmail) await leadEvent(leadId, "enriched", `Contact email found on the business's website`);
+  if (facebookEmail) await leadEvent(leadId, "enriched", `Contact email found on the business's Facebook page`, { facebookUrl: social.facebook ?? null });
 
   return { next: q.qualified && earlyStage && !lead.doNotContact ? [{ queue: "ai-analysis", payload: { leadId } }] : [] };
 }

@@ -3,6 +3,7 @@ import { getAIProvider } from "@/providers/ai";
 import { ClaudeCodeProvider } from "@/providers/ai/ClaudeCodeProvider";
 import type { LeadProvider } from "./LeadProvider";
 import { GooglePlacesProvider } from "./GooglePlacesProvider";
+import { ApifyGoogleMapsProvider } from "./ApifyGoogleMapsProvider";
 import { YelpProvider } from "./YelpProvider";
 import { MockLeadProvider } from "./MockLeadProvider";
 import { OpenStreetMapProvider } from "./OpenStreetMapProvider";
@@ -11,6 +12,7 @@ import { MultiLeadProvider } from "./MultiLeadProvider";
 
 export const LEAD_SOURCES = [
   { key: "google_places", label: "Google Maps (Places API)", description: "Ratings, reviews, phone and website from Google Maps. Needs GOOGLE_PLACES_API_KEY." },
+  { key: "apify_google_maps", label: "Google Maps (Apify)", description: "Google Maps listings scraped by Apify — phone, rating, reviews, website. Needs APIFY_API_TOKEN." },
   { key: "openstreetmap", label: "OpenStreetMap", description: "Free live map data, no key. Coverage varies by city." },
   { key: "web_search", label: "Claude web search", description: "Claude searches Maps listings, directories, review sites and social pages. Uses your Claude subscription (claude_code)." },
   { key: "yelp", label: "Yelp", description: "Needs YELP_API_KEY." },
@@ -24,6 +26,8 @@ export function sourceAvailability(key: string): { ok: boolean; reason?: string 
   switch (key) {
     case "google_places":
       return e.GOOGLE_PLACES_API_KEY || (e.LEAD_PROVIDER_API_KEY && e.LEAD_PROVIDER.includes("google")) ? { ok: true } : { ok: false, reason: "GOOGLE_PLACES_API_KEY not set" };
+    case "apify_google_maps":
+      return e.APIFY_API_TOKEN ? { ok: true } : { ok: false, reason: "APIFY_API_TOKEN not set" };
     case "yelp":
       return e.YELP_API_KEY ? { ok: true } : { ok: false, reason: "YELP_API_KEY not set" };
     case "web_search":
@@ -42,6 +46,8 @@ function build(key: string): LeadProvider {
   switch (key) {
     case "google_places":
       return new GooglePlacesProvider(e.GOOGLE_PLACES_API_KEY ?? e.LEAD_PROVIDER_API_KEY ?? "");
+    case "apify_google_maps":
+      return new ApifyGoogleMapsProvider(e.APIFY_API_TOKEN ?? "");
     case "yelp":
       return new YelpProvider(e.YELP_API_KEY ?? "");
     case "openstreetmap":

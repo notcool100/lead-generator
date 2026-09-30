@@ -19,10 +19,13 @@ const EnvSchema = z.object({
   AI_MODEL: z.string().default("claude-opus-5"),
   AI_SMALL_MODEL: z.string().default("claude-haiku-4-5"),
 
-  /** Comma-separated default sources: google_places, openstreetmap, web_search, yelp, mock */
+  /** Comma-separated default sources: google_places, apify_google_maps, openstreetmap, web_search, yelp, mock */
   LEAD_PROVIDER: z.string().default("openstreetmap,web_search"),
   GOOGLE_PLACES_API_KEY: z.string().optional(),
   YELP_API_KEY: z.string().optional(),
+  APIFY_API_TOKEN: z.string().optional(),
+  /** Look up emails on Facebook pages (via Apify) for qualified leads that have none. */
+  APIFY_FACEBOOK_ENRICHMENT: z.enum(["true", "false"]).default("true"),
   OVERPASS_URLS: z.string().default("https://overpass-api.de/api/interpreter,https://maps.mail.ru/osm/tools/overpass/api/interpreter,https://overpass.kumi.systems/api/interpreter"),
   OSM_CONTACT: z.string().optional(),
   LEAD_PROVIDER_API_KEY: z.string().optional(),

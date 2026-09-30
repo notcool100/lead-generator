@@ -97,6 +97,7 @@ export async function discoverLeadsForCampaign(campaignId: string, providerOverr
       city: campaign.city,
       // Never request more than we can store, so resuming from the cursor skips nothing.
       limit: remaining,
+      maxTotal: campaign.maxLeads - existingCount,
       pageToken,
     });
     for (const f of (res as { failed?: string[] }).failed ?? []) failedSources.add(f);

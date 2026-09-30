@@ -105,8 +105,10 @@ See `.env.example` for the complete list.
 | `AI_PROVIDER` | | `claude_code` (default — uses your Claude subscription through the logged-in `claude` CLI on this machine; `CLAUDE_CODE_MODEL`/`CLAUDE_CODE_SMALL_MODEL`) \| `anthropic` (API key; required on servers/Docker) \| `openai` \| `mock` |
 | `ANTHROPIC_API_KEY` | prod | Server-side only; never sent to the browser |
 | `AI_MODEL` / `AI_SMALL_MODEL` | | Default `claude-opus-5` (analysis & copy) / `claude-haiku-4-5` (classification) |
-| `LEAD_PROVIDER` | | Default sources, comma-separated: `google_places`, `openstreetmap` (free, no key), `web_search` (Claude web search — Maps listings, directories, review & social pages; needs `claude_code`), `yelp`, `mock`. Each campaign can pick its own sources in the wizard; results are merged and de-duplicated. |
+| `LEAD_PROVIDER` | | Default sources, comma-separated: `google_places`, `apify_google_maps` (Google Maps via Apify), `openstreetmap` (free, no key), `web_search` (Claude web search — Maps listings, directories, review & social pages; needs `claude_code`), `yelp`, `mock`. Each campaign can pick its own sources in the wizard; results are merged and de-duplicated. |
 | `GOOGLE_PLACES_API_KEY`, `YELP_API_KEY` | | Keys for Google Maps (Places API New) and Yelp Fusion |
+| `APIFY_API_TOKEN` | | Enables the `apify_google_maps` source (actor `compass/crawler-google-places`, one crawl per campaign) and the Facebook email lookup |
+| `APIFY_FACEBOOK_ENRICHMENT` | | `true` (default) — for targeted leads with no email on their site (or no site), find their Facebook page (`apify/google-search-scraper`) and read its contact email (`apify/facebook-pages-scraper`) |
 | `DISCOVERY_BATCH_SIZE` | | New leads per discovery run (default 20). Launch fetches the first batch; "Discover next 20" continues from a saved cursor until the campaign's total is reached. |
 | `OVERPASS_URLS`, `OSM_CONTACT` | | OpenStreetMap Overpass mirrors (tried in order) and contact for the OSM User-Agent |
 | `EMAIL_PROVIDER`, `EMAIL_API_KEY` | prod | `resend` \| `sendgrid` \| `ses` \| `log`. SES uses `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
@@ -233,6 +235,7 @@ legitimate-interest assessment for B2B, CASL in Canada is opt-in, CAN-SPAM in th
 | Template classification with `claude-haiku-4-5` (only for unknown categories, cached) | <$0.001 |
 | Website checks, scoring, dedupe | $0 (no AI) |
 | Google Places Text Search (20 results/request) | a few cents per request — see Google Maps Platform pricing |
+| Apify Google Maps crawl / Facebook email lookup | pay-per-result — see each actor's pricing on apify.com |
 | Email (Resend/SES/SendGrid) | fractions of a cent per email |
 
 AI responses are cached by input hash, so regenerating identical input is free; only qualified leads reach AI.
