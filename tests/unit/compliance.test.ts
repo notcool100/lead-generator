@@ -101,8 +101,18 @@ describe("lead scoring and qualification", () => {
   it("scores no-website, contactable, well-reviewed leads highest", () => {
     const hi = scoreLead({ websiteStatus: "no_website", email: "a@b.c", phone: "1", rating: 4.8, reviewCount: 300, address: "x", hasSocial: true }).score;
     const lo = scoreLead({ websiteStatus: "excellent_website", email: null, phone: null, rating: null, reviewCount: null, address: null, hasSocial: false }).score;
-    expect(hi).toBe(100);
-    expect(lo).toBe(0);
+    expect(hi).toBe(83);
+    expect(lo).toBe(4);
+  });
+  it("adds points and readable factors for verified website deficiencies only", () => {
+    const base = { email: null, phone: "1", rating: null, reviewCount: 40, address: null, hasSocial: true, category: "plumber" };
+    const bad = scoreLead({ ...base, websiteStatus: "poor_website", mobileFriendly: false, hasClearCta: false, hasContactForm: false, mentionsServiceArea: false });
+    const unchecked = scoreLead({ ...base, websiteStatus: "poor_website" });
+    expect(bad.score - unchecked.score).toBe(15);
+    expect(bad.factors).toEqual(expect.arrayContaining(["Website is not mobile-friendly", "No contact or quote form on the website", "Website doesn't state a service area"]));
+    expect(unchecked.factors.join(" ")).not.toMatch(/mobile|form|service area/);
+    // A restaurant isn't penalised for not listing a service area.
+    expect(scoreLead({ ...base, category: "restaurant", websiteStatus: "poor_website", mentionsServiceArea: false }).factors.join(" ")).not.toMatch(/service area/);
   });
   it("qualifies only targeted website statuses above the min score", () => {
     const t = ["no_website", "poor_website"] as const;

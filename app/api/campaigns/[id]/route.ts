@@ -10,8 +10,11 @@ export const GET = apiHandler<{ id: string }>({}, async ({ params }) => {
 });
 
 export const PATCH = apiHandler<{ id: string }>({ role: "operator" }, async ({ req, params, session }) => {
-  const data = await parseBody(req, CampaignUpdateSchema);
-  const campaign = await prisma.campaign.update({ where: { id: params.id }, data });
-  await audit({ userId: session.sub, action: "campaign.update", entityType: "campaign", entityId: campaign.id, metadata: data });
+  const { dncChecked, ...data } = await parseBody(req, CampaignUpdateSchema);
+  const campaign = await prisma.campaign.update({
+    where: { id: params.id },
+    data: { ...data, ...(dncChecked === undefined ? {} : { dncCheckedAt: dncChecked ? new Date() : null }) },
+  });
+  await audit({ userId: session.sub, action: "campaign.update", entityType: "campaign", entityId: campaign.id, metadata: { ...data, ...(dncChecked === undefined ? {} : { dncChecked }) } });
   return json({ campaign });
 });

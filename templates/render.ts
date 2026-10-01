@@ -189,11 +189,20 @@ export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boo
   const mapUrl = k.contact.mapQuery ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(k.contact.mapQuery)}` : null;
   const primary = { label: config.primaryCTA.label, href: safeHref(config.primaryCTA.href) };
   const directionsLabel = "Get directions";
+  const f = config.features;
+  const tel = k.contact.phone ? `tel:${k.contact.phone.replace(/[^+\d]/g, "")}` : null;
+  // Click-to-call sits next to the primary CTA whenever the primary isn't already the phone link.
+  const secondaryBtn =
+    tel && !primary.href.startsWith("tel:")
+      ? `<a class="btn btn-ghost" href="${esc(tel)}">${icon("phone", "btn-icon-l")}Call ${esc(k.contact.phone)}</a>`
+      : mapUrl
+        ? `<a class="btn btn-ghost" href="${esc(mapUrl)}" target="_blank" rel="noopener">${icon("navigation", "btn-icon-l")}${directionsLabel}</a>`
+        : "";
 
   const ctas = `
     <div class="ctas">
       <a class="btn btn-accent" href="${primary.href}">${esc(primary.label)}${icon("arrowRight", "btn-icon")}</a>
-      ${mapUrl ? `<a class="btn btn-ghost" href="${esc(mapUrl)}" target="_blank" rel="noopener">${icon("navigation", "btn-icon-l")}${directionsLabel}</a>` : ""}
+      ${secondaryBtn}
     </div>`;
 
   // ── Hero (max 4 text elements: eyebrow, headline, subtext, CTAs)
@@ -336,6 +345,7 @@ export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boo
     k.contact.email
       ? `<li>${icon("mail", "row-icon")}<div><p class="row-label">Email</p><p><a href="mailto:${esc(k.contact.email)}">${esc(k.contact.email)}</a></p></div></li>`
       : "",
+    f.serviceArea ? `<li>${icon("navigation", "row-icon")}<div><p class="row-label">Service area</p><p>${esc(f.serviceArea)}</p></div></li>` : "",
     `<li>${icon("clock", "row-icon")}<div><p class="row-label">Opening hours</p><p class="muted">Added with you before launch</p></div></li>`,
   ].join("");
   const visit = `
@@ -349,6 +359,32 @@ export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boo
       <figure class="visit-media sr">${picture(im.visit, { sizes: "(min-width: 980px) 45vw, 90vw", label: "Location photo", variant: 2 })}</figure>
     </div>
   </section>`;
+
+  // ── Quote / contact form (demo: no JavaScript on the page, so it doesn't submit)
+  const quote =
+    f.quoteForm || f.freeEstimate
+      ? `
+  <section class="section quote-sec" id="quote">
+    <div class="wrap quote-grid">
+      <div class="sr">
+        <h2>${f.freeEstimate ? "Request a free estimate" : "Send us a message"}</h2>
+        <p class="body-lg muted">${f.freeEstimate ? `Tell us about the job and ${esc(config.businessName)} will get back to you with an estimate.` : `Questions or bookings — send a message and ${esc(config.businessName)} will get back to you.`}</p>
+        ${tel ? `<a class="link" href="${esc(tel)}">${icon("phone", "link-icon")}Prefer to talk? Call ${esc(k.contact.phone)}</a>` : ""}
+      </div>
+      <form class="qform sr" aria-label="${f.freeEstimate ? "Estimate request" : "Contact"} form">
+        <label>Name<input name="name" autocomplete="name"></label>
+        <label>Phone<input name="phone" type="tel" autocomplete="tel"></label>
+        <label class="full">Email<input name="email" type="email" autocomplete="email"></label>
+        <label class="full">${f.freeEstimate ? "What do you need done?" : "Message"}<textarea name="message" rows="4"></textarea></label>
+        <button class="btn btn-accent full" type="button">${f.freeEstimate ? "Request my free estimate" : "Send message"}</button>
+        <p class="note full">Preview only — on the live site, enquiries go straight to your inbox.</p>
+      </form>
+    </div>
+  </section>`
+      : "";
+
+  // Mobile click-to-call bar
+  const callBar = tel ? `<a class="callbar" href="${esc(tel)}">${icon("phone", "btn-icon-l")}Call now</a>` : "";
 
   // ── Closing CTA (same label as the primary CTA: one label per intent)
   const closing = `
@@ -443,9 +479,11 @@ ${band}
 ${gallery}
 ${reviews}
 ${visit}
+${quote}
 ${closing}
 </main>
 ${footer}
+${callBar}
 </body>
 </html>`;
 }
@@ -581,6 +619,15 @@ svg{flex:none}
 .rows a:hover{color:var(--accent)}
 .visit-media{aspect-ratio:5/4;border-radius:var(--r);overflow:hidden}
 
+.quote-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:clamp(2rem,6vw,6rem);align-items:start}
+.qform{display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:clamp(1.4rem,3vw,2.2rem);border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.qform label{display:grid;gap:.4rem;font-size:.85rem;color:var(--muted)}
+.qform .full{grid-column:1/-1}
+.qform input,.qform textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:.75rem .9rem}
+.qform input:focus,.qform textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.qform .note{font-size:.78rem;color:var(--muted)}
+.callbar{display:none}
+
 .closing{padding:clamp(4rem,8vw,6.5rem) 0;background:var(--deep);color:var(--on-deep)}
 .closing-inner{display:flex;align-items:center;justify-content:space-between;gap:2rem;flex-wrap:wrap}
 .closing h2{margin:0;font-size:clamp(2.2rem,4.5vw,3.8rem)}
@@ -639,7 +686,7 @@ svg{flex:none}
 /* responsive */
 @media (max-width:980px){
   .nav-links{display:none}
-  .hero-grid,.about-grid,.reviews-grid,.visit-grid{grid-template-columns:1fr}
+  .hero-grid,.about-grid,.reviews-grid,.visit-grid,.quote-grid{grid-template-columns:1fr}
   .collage{padding:0 0 10% 12%;max-width:560px}
   .about-media{max-width:560px}
   .footer-grid{grid-template-columns:1fr 1fr}
@@ -657,5 +704,8 @@ svg{flex:none}
   .footer-grid{grid-template-columns:1fr}
   .nav-cta{display:none}
   .ctas .btn{flex:1 1 100%}
+  .qform{grid-template-columns:1fr}
+  .callbar{position:fixed;left:16px;right:16px;bottom:16px;z-index:40;display:flex;align-items:center;justify-content:center;gap:.5rem;height:52px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:600;box-shadow:0 12px 30px -10px rgba(0,0,0,.45)}
+  .footer{padding-bottom:6rem}
 }
 `;

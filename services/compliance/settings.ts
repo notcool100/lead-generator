@@ -33,15 +33,46 @@ export const GeneralSettingsSchema = z.object({
   defaultEmailTemplate: z
     .object({ subject: z.string().max(200), intro: z.string().max(2000) })
     .default({
-      subject: "A quick website preview for {{business_name}}",
+      subject: "A website preview for {{business_name}}",
       intro: "I came across {{business_name}} while researching {{category}} businesses in {{city}}.",
     }),
 });
 
 export type GeneralSettings = z.infer<typeof GeneralSettingsSchema>;
 
-const SCHEMAS = { compliance: ComplianceSettingsSchema, general: GeneralSettingsSchema } as const;
-type Key = keyof typeof SCHEMAS;
+/** The recurring offer pitched in emails and calls. Changing it here changes every new draft and call. */
+export const OfferSettingsSchema = z.object({
+  monthlyPrice: z.number().min(1).max(100_000).default(110),
+  currency: z.string().trim().min(1).max(8).default("USD"),
+  includes: z
+    .array(z.string().trim().min(1).max(120))
+    .min(1)
+    .max(12)
+    .default(["Professional 5–7 page website", "Hosting and SSL", "Ongoing maintenance", "Small content updates", "Lead-generation and contact features"]),
+});
+
+export type OfferSettings = z.infer<typeof OfferSettingsSchema>;
+
+/** AI cold-calling rules. Every call (manual or automatic) is checked against these. */
+export const CallingSettingsSchema = z.object({
+  /** Name the AI caller introduces itself with. It always also says it is an AI assistant. */
+  agentName: z.string().trim().min(1).max(40).default("Alex"),
+  /** IANA timezone used for calling hours, e.g. "America/New_York". */
+  timezone: z.string().trim().min(1).max(64).default("UTC"),
+  startHour: z.number().int().min(0).max(23).default(10),
+  endHour: z.number().int().min(1).max(24).default(17),
+  /** 0 = Sunday … 6 = Saturday */
+  days: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5]),
+  maxCallsPerDay: z.number().int().min(0).max(1000).default(30),
+  maxAttemptsPerLead: z.number().int().min(1).max(5).default(2),
+  retryAfterHours: z.number().int().min(1).max(336).default(48),
+});
+
+export type CallingSettings = z.infer<typeof CallingSettingsSchema>;
+
+const SCHEMAS = { compliance: ComplianceSettingsSchema, general: GeneralSettingsSchema, offer: OfferSettingsSchema, calling: CallingSettingsSchema } as const;
+export type SettingsKey = keyof typeof SCHEMAS;
+type Key = SettingsKey;
 type ValueOf<K extends Key> = z.infer<(typeof SCHEMAS)[K]>;
 
 export async function getSettings<K extends Key>(key: K): Promise<ValueOf<K>> {

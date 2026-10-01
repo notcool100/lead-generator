@@ -17,6 +17,10 @@ const GENERIC: Record<string, Tone> = {
   approved: "amber", queued: "blue", sent: "green", rejected: "neutral", cancelled: "neutral",
   scheduled: "blue", drafted: "amber", skipped: "neutral", processing: "blue",
   delivered: "green", bounced: "red", complained: "red", opened: "blue", clicked: "violet", replied: "green", unsubscribed: "red",
+  // calls
+  registered: "blue", ongoing: "blue", ended: "neutral", not_connected: "amber", error: "red",
+  interested: "green", appointment_booked: "green", callback_requested: "violet", not_interested: "neutral",
+  wrong_number: "red", no_answer: "amber", voicemail: "amber", do_not_contact: "red", unknown: "neutral",
 };
 
 export function WebsiteStatusBadge({ status }: { status: string }) {

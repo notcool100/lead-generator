@@ -13,6 +13,7 @@ import { aiAnalysisWorker } from "./aiAnalysisWorker";
 import { deploymentWorker, previewWorker } from "./previewWorker";
 import { emailSendWorker, outreachDraftWorker } from "./outreachWorker";
 import { followupWorker, inboxSyncWorker } from "./followupWorker";
+import { callWorker } from "./callWorker";
 import { imapConfigured } from "@/services/email/inboxSync";
 
 process.env.SERVICE_NAME ??= "worker";
@@ -28,6 +29,7 @@ async function main() {
     outreachDraftWorker(),
     emailSendWorker(),
     followupWorker(),
+    callWorker(),
     ...(imapConfigured() ? [inboxSyncWorker()] : []),
   ];
 

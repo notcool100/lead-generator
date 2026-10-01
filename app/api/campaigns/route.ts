@@ -12,11 +12,11 @@ export const GET = apiHandler({}, async () => {
 });
 
 export const POST = apiHandler({ role: "operator" }, async ({ req, session }) => {
-  const { launch, ...data } = await parseBody(req, CampaignCreateSchema);
+  const { launch, dncChecked, ...data } = await parseBody(req, CampaignCreateSchema);
   const unavailable = data.leadSources.filter((s) => !sourceAvailability(s).ok);
   if (unavailable.length) throw new HttpError(422, `Unavailable lead sources: ${unavailable.map((s) => `${s} (${sourceAvailability(s).reason})`).join(", ")}`);
   const campaign = await prisma.campaign.create({
-    data: { ...data, status: launch ? "running" : "draft", startedAt: launch ? new Date() : null, createdById: session.sub },
+    data: { ...data, dncCheckedAt: dncChecked ? new Date() : null, status: launch ? "running" : "draft", startedAt: launch ? new Date() : null, createdById: session.sub },
   });
   await audit({ userId: session.sub, action: "campaign.create", entityType: "campaign", entityId: campaign.id, metadata: { launch, autoSend: data.autoSendEnabled } });
   if (launch) await enqueue("lead-discovery", { campaignId: campaign.id });

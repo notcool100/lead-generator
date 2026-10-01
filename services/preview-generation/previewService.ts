@@ -84,13 +84,21 @@ export async function generatePreview(leadId: string, opts: { templateKey?: stri
     const palette = tpl.palettes[Math.min(c.paletteIndex, tpl.palettes.length - 1)];
     const mapQuery = [lead.businessName, lead.address, lead.city, lead.country].filter(Boolean).join(", ");
     const primaryHref = lead.phone ? `tel:${lead.phone.replace(/[^+\d]/g, "")}` : lead.email ? `mailto:${lead.email}` : "#contact";
+    const pkg = new Set((analysis?.packageFeatures as string[] | null) ?? []);
+    const features = {
+      quoteForm: pkg.has("Contact / request-a-quote form"),
+      freeEstimate: pkg.has("Request a Free Estimate call-to-action"),
+      serviceArea: pkg.has("Service-area information") ? (analysis?.serviceArea ?? null) : null,
+    };
+    // Services the analysis found in the business's own data; descriptions stay generic (never invented).
+    const services = ((analysis?.services as string[] | null) ?? []).filter((x) => x.trim()).slice(0, 3);
 
     const config: PreviewConfig = PreviewConfigSchema.parse({
       templateKey,
       businessName: lead.businessName,
       headline: c.headline,
       subheadline: c.subheadline,
-      primaryCTA: { label: c.primaryCTALabel, href: primaryHref },
+      primaryCTA: features.freeEstimate ? { label: "Request a Free Estimate", href: "#quote" } : { label: c.primaryCTALabel, href: primaryHref },
       secondaryCTA: c.secondaryCTALabel ? { label: c.secondaryCTALabel, href: "#contact" } : null,
       sections: c.sections,
       colors: palette,
@@ -98,13 +106,14 @@ export async function generatePreview(leadId: string, opts: { templateKey?: stri
       content: {
         about: c.about,
         offeringsTitle: tpl.offeringsTitle,
-        offerings: [], // only filled from verified business data (never AI-invented)
+        offerings: services.map((title) => ({ title: title.slice(0, 80), description: `Get in touch to ask about ${title.toLowerCase()} — full details added with you before launch.` })),
         offeringsPlaceholder: tpl.offeringsPlaceholder,
         highlights: c.highlights,
         rating: lead.rating && lead.reviewCount ? { value: lead.rating, count: lead.reviewCount, source: lead.source === "mock" ? "sample data" : lead.source.replace("_", " ") } : null,
         contact: { phone: lead.phone, email: lead.email, address: lead.address, city: lead.city, country: lead.country, mapQuery },
         social: Object.fromEntries(Object.entries((lead.socialLinks as Record<string, string> | null) ?? {}).filter(([, v]) => /^https?:\/\//.test(v))),
       },
+      features,
       images,
       seo: { title: c.seoTitle, description: c.seoDescription },
       generatedAt: new Date().toISOString(),

@@ -8,7 +8,8 @@ import { prisma } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { getSettings } from "@/services/compliance/settings";
 import { LEAD_SOURCES, sourceAvailability } from "@/providers/leads";
-import { ComplianceForm, GeneralForm, TestEmailForm } from "./settings-forms";
+import { CallingForm, ComplianceForm, GeneralForm, OfferForm, TestEmailForm } from "./settings-forms";
+import { callingConfigured } from "@/services/calling/callService";
 import { imapConfigured } from "@/services/email/inboxSync";
 
 function ProviderRow({ name, value, ok, note }: { name: string; value: string; ok: boolean; note?: string }) {
@@ -29,9 +30,12 @@ export default async function SettingsPage() {
   const e = env();
   const inboxRow = await prisma.setting.findUnique({ where: { key: "imap_sync" } });
   const inboxState = inboxRow?.value as { lastSyncAt?: string } | undefined;
-  const [compliance, general, audits] = await Promise.all([
+  const calling = callingConfigured();
+  const [compliance, general, offer, callingSettings, audits] = await Promise.all([
     getSettings("compliance"),
     getSettings("general"),
+    getSettings("offer"),
+    getSettings("calling"),
     prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 25, include: { user: { select: { name: true } } } }),
   ]);
 
@@ -60,6 +64,8 @@ export default async function SettingsPage() {
               <ProviderRow name="Email provider" value={e.EMAIL_PROVIDER === "smtp" ? `smtp · ${e.SMTP_USER ?? ""}` : e.EMAIL_PROVIDER} ok={e.EMAIL_PROVIDER === "log" || e.EMAIL_PROVIDER === "ses" || (e.EMAIL_PROVIDER === "smtp" ? Boolean(e.SMTP_HOST && e.SMTP_PASSWORD) : Boolean(e.EMAIL_API_KEY))} />
               <ProviderRow name="Inbox sync (replies & bounces)" value={imapConfigured() ? `IMAP · ${e.IMAP_USER} · every 2 min${inboxState?.lastSyncAt ? ` · last ${formatDate(inboxState.lastSyncAt)}` : ""}` : "off"} ok={imapConfigured()} note="IMAP_* not set" />
               <ProviderRow name="Webhook secret" value="EMAIL_WEBHOOK_SECRET" ok={Boolean(e.EMAIL_WEBHOOK_SECRET)} />
+              <ProviderRow name="AI calling (Retell + Twilio)" value={calling.ok ? `from ${e.RETELL_FROM_NUMBER}` : "off"} ok={calling.ok} note={`${calling.missing.length} env var${calling.missing.length === 1 ? "" : "s"} missing`} />
+              {calling.ok ? <p className="mt-1 text-xs text-muted-foreground">Retell webhook URL: <span className="font-mono">{e.APP_URL}/api/webhooks/retell</span></p> : null}
               <ProviderRow name="Preview deployment" value={`${e.DEPLOYMENT_PROVIDER}${e.PREVIEW_BASE_DOMAIN ? ` · *.${e.PREVIEW_BASE_DOMAIN}` : " · /p/<slug>"}`} ok={e.DEPLOYMENT_PROVIDER !== "vercel" || Boolean(e.DEPLOYMENT_API_KEY)} />
               <ProviderRow name="Redis" value={e.REDIS_URL.replace(/\/\/[^@]*@/, "//***@")} ok />
               <ProviderRow name="Preview photos" value={[e.UNSPLASH_ACCESS_KEY && "Unsplash", e.PEXELS_API_KEY && "Pexels"].filter(Boolean).join(" + ") || "placeholders"} ok={Boolean(e.UNSPLASH_ACCESS_KEY || e.PEXELS_API_KEY)} note="add UNSPLASH_ACCESS_KEY or PEXELS_API_KEY" />
@@ -77,6 +83,22 @@ export default async function SettingsPage() {
             <CardContent><GeneralForm initial={general} /></CardContent>
           </Card>
         </div>
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Offer</CardTitle>
+            <CardDescription>The recurring website + lead-generation service pitched in emails and calls.</CardDescription>
+          </CardHeader>
+          <CardContent><OfferForm initial={offer} /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Calling</CardTitle>
+            <CardDescription>Your calling hours for every AI call. Each campaign&apos;s country rules (legal hours, public holidays, Do Not Call) are applied on top.</CardDescription>
+          </CardHeader>
+          <CardContent><CallingForm initial={callingSettings} /></CardContent>
+        </Card>
       </div>
       <Card className="mt-4">
         <CardHeader><CardTitle>Recent audit log</CardTitle></CardHeader>

@@ -14,6 +14,10 @@ export interface HtmlSignals {
   hasBooking: boolean;
   socialLinks: Record<string, string>;
   hasClearCta: boolean;
+  /** A contact / quote form (native form with a message or email field, or a known form embed). */
+  hasContactForm: boolean;
+  /** The page says which areas the business serves. */
+  mentionsServiceArea: boolean;
   hasOpenGraph: boolean;
   hasFavicon: boolean;
   hasStructuredData: boolean;
@@ -82,6 +86,10 @@ export function extractSignals(html: string, pageUrl: string): HtmlSignals {
     hasBooking: /book(ing)? (a table|now|online)|reserv(e|ation)|opentable|resy|booking\.com|calendly|appointment/.test(lower + htmlLower.slice(0, 200_000)),
     socialLinks,
     hasClearCta: ctaWords.test(linkAndButtonText),
+    hasContactForm:
+      $("form").filter((_, f) => $(f).find('textarea, input[type="email"], input[name*="message" i], input[name*="phone" i]').length > 0).length > 0 ||
+      /wpcf7|formspree|typeform\.com|jotform|docs\.google\.com\/forms|hsforms|wufoo|tally\.so|fluentform|gform_/.test(htmlLower),
+    mentionsServiceArea: /service areas?|areas (we )?serve|we serve|serving (the )?[a-z]+|we cover|coverage area|proudly serving/.test(lower),
     hasOpenGraph: $('meta[property^="og:"]').length > 0,
     hasFavicon: $('link[rel*="icon"]').length > 0,
     hasStructuredData: $('script[type="application/ld+json"]').length > 0,

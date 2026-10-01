@@ -43,6 +43,14 @@ export const PreviewConfigSchema = z.object({
     }),
     social: z.record(z.string(), z.string().url()),
   }),
+  /** Lead-generation features chosen for this business (from the analysis' package features). */
+  features: z
+    .object({
+      quoteForm: z.boolean(),
+      freeEstimate: z.boolean(),
+      serviceArea: z.string().max(200).nullable(),
+    })
+    .default({ quoteForm: false, freeEstimate: false, serviceArea: null }),
   images: z.object({ hero: ImageRefSchema.nullable(), gallery: z.array(ImageRefSchema).max(12) }),
   seo: z.object({ title: z.string().max(70), description: z.string().max(170) }),
   generatedAt: z.string(),

@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { deterministicEmail, lintOutreachEmail, OUTREACH_SYSTEM, OutreachEmailSchema, outreachPrompt, type OutreachFacts } from "@/prompts/outreach";
 import type { NextAction } from "@/queue/queues";
 import { generateJsonCached } from "@/services/ai-analysis/aiClient";
+import { formatMonthlyPrice } from "@/lib/offer";
 import { getSettings } from "@/services/compliance/settings";
 import { buildVerifiedObservations } from "./observations";
 
@@ -22,6 +23,7 @@ export async function generateOutreachDraft(
       websiteChecks: { orderBy: { checkedAt: "desc" }, take: 1 },
       previews: { where: { deploymentStatus: "deployed" }, orderBy: { updatedAt: "desc" }, take: 1 },
       outreachMessages: { where: { sequenceNumber: 0 }, orderBy: { createdAt: "desc" }, take: 1 },
+      analyses: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
   if (lead.doNotContact || lead.unsubscribed) throw new OutreachNotPossibleError("Lead is do-not-contact / unsubscribed");
@@ -29,8 +31,10 @@ export async function generateOutreachDraft(
   const preview = lead.previews[0];
   if (!preview?.deploymentUrl) throw new OutreachNotPossibleError("No deployed preview for this lead yet");
 
-  const [compliance, general] = await Promise.all([getSettings("compliance"), getSettings("general")]);
+  const [compliance, general, offer] = await Promise.all([getSettings("compliance"), getSettings("general"), getSettings("offer")]);
   const check = lead.websiteChecks[0];
+  const price = formatMonthlyPrice(offer);
+  const packageFeatures = (lead.analyses[0]?.packageFeatures as string[] | null) ?? [];
 
   const facts: OutreachFacts = {
     businessName: lead.businessName,
@@ -56,6 +60,9 @@ export async function generateOutreachDraft(
     previousSubject: lead.outreachMessages[0]?.subject ?? null,
     templateSubject: general.defaultEmailTemplate.subject,
     templateIntro: general.defaultEmailTemplate.intro,
+    offer: { price, includes: offer.includes },
+    // Business-specific extras are the interesting ones; core features are covered by offer.includes.
+    relevantFeatures: packageFeatures.filter((f) => !/website|hosting|mobile|seo|analytics|notification|contact information/i.test(f)).slice(0, 4),
   };
 
   let email = deterministicEmail(facts);
@@ -65,7 +72,7 @@ export async function generateOutreachDraft(
       { system: OUTREACH_SYSTEM, prompt: outreachPrompt(facts), schema: OutreachEmailSchema, schemaName: "outreach_email", tier: "large", maxTokens: 2000 },
       { bypassCache: opts.regenerate },
     );
-    const problems = lintOutreachEmail(res.data);
+    const problems = lintOutreachEmail(res.data, { price, sequenceNumber: seq });
     if (problems.length) {
       logger.warn({ leadId, problems }, "AI outreach draft rejected by honesty lint; using template");
     } else {

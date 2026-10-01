@@ -8,6 +8,7 @@
     "start": "next start",
     "worker": "SERVICE_NAME=worker tsx workers/index.ts",
     "worker:dev": "SERVICE_NAME=worker tsx watch workers/index.ts",
+    "retell:setup": "tsx scripts/setup-retell.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",

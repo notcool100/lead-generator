@@ -10,6 +10,8 @@ export const GET = apiHandler({ role: "admin" }, async () => {
   return json({
     compliance: await getSettings("compliance"),
     general: await getSettings("general"),
+    offer: await getSettings("offer"),
+    calling: await getSettings("calling"),
     providers: {
       ai: { provider: e.AI_PROVIDER, model: e.AI_MODEL, smallModel: e.AI_SMALL_MODEL, configured: Boolean(e.ANTHROPIC_API_KEY || e.OPENAI_API_KEY) },
       leads: { provider: e.LEAD_PROVIDER, configured: Boolean(e.LEAD_PROVIDER_API_KEY) || e.LEAD_PROVIDER === "mock" },
@@ -19,7 +21,7 @@ export const GET = apiHandler({ role: "admin" }, async () => {
   });
 });
 
-const Body = z.object({ key: z.enum(["compliance", "general"]), value: z.unknown() });
+const Body = z.object({ key: z.enum(["compliance", "general", "offer", "calling"]), value: z.unknown() });
 
 export const PUT = apiHandler({ role: "admin" }, async ({ req, session }) => {
   const { key, value } = await parseBody(req, Body);

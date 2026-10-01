@@ -25,7 +25,13 @@ export default async function LeadsPage(props: PageProps<"/leads">) {
     ...(q.category ? { category: { equals: q.category, mode: "insensitive" } } : {}),
   };
   const [leads, total, campaigns] = await Promise.all([
-    prisma.lead.findMany({ where, orderBy: [{ leadScore: "desc" }, { createdAt: "desc" }], skip: (q.page - 1) * q.pageSize, take: q.pageSize }),
+    prisma.lead.findMany({
+      where,
+      orderBy: [{ leadScore: "desc" }, { createdAt: "desc" }],
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
+      include: { outreachMessages: { select: { status: true }, orderBy: { createdAt: "desc" }, take: 1 } },
+    }),
     prisma.lead.count({ where }),
     prisma.campaign.findMany({ select: { id: true, name: true }, orderBy: { createdAt: "desc" } }),
   ]);
@@ -58,7 +64,7 @@ export default async function LeadsPage(props: PageProps<"/leads">) {
         <EmptyState title="No leads found" description="Adjust filters or launch a campaign." />
       ) : (
         <Card>
-          <LeadsTable leads={leads} />
+          <LeadsTable leads={leads.map((l) => ({ ...l, outreachStatus: l.outreachMessages[0]?.status ?? null }))} />
           <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
             <span>Page {q.page} of {pages}</span>
             <div className="flex gap-2">

@@ -46,6 +46,12 @@ const EnvSchema = z.object({
   EMAIL_WEBHOOK_SECRET: z.string().optional(),
   AWS_REGION: z.string().optional(),
 
+  /** AI cold calling: Retell runs the conversation over a Twilio number imported into Retell. */
+  RETELL_API_KEY: z.string().optional(),
+  RETELL_AGENT_ID: z.string().optional(),
+  /** E.164 caller ID — the Twilio number connected to Retell, e.g. +14155550123. */
+  RETELL_FROM_NUMBER: z.string().optional(),
+
   PREVIEW_BASE_DOMAIN: z.string().optional(),
   DEPLOYMENT_PROVIDER: z.enum(["vps", "static", "vercel"]).default("vps"),
   DEPLOYMENT_API_KEY: z.string().optional(),

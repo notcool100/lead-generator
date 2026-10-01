@@ -65,6 +65,8 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
         copyrightYear: result.signals?.copyrightYear ?? null,
         outdatedSignals: result.score?.outdatedSignals ?? [],
         band: result.score?.band ?? null,
+        hasContactForm: result.signals?.hasContactForm ?? null,
+        mentionsServiceArea: result.signals?.mentionsServiceArea ?? null,
       } as Prisma.InputJsonValue,
     },
   });
@@ -90,7 +92,7 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
   }
   const email = lead.email ?? siteEmail ?? facebookEmail;
 
-  const { score } = scoreLead({
+  const { score, factors } = scoreLead({
     websiteStatus: result.status,
     email,
     phone: lead.phone,
@@ -98,6 +100,11 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
     reviewCount: lead.reviewCount,
     address: lead.address,
     hasSocial: Object.keys(social).length > 0,
+    mobileFriendly: result.signals ? result.signals.hasViewport : null,
+    hasClearCta: result.signals?.hasClearCta ?? null,
+    hasContactForm: result.signals?.hasContactForm ?? null,
+    mentionsServiceArea: result.signals?.mentionsServiceArea ?? null,
+    category: lead.category,
   });
 
   const q = qualifies({
@@ -131,6 +138,7 @@ export async function runWebsiteCheck(leadId: string, analyzer?: WebsiteAnalyzer
       email,
       socialLinks: Object.keys(social).length ? social : undefined,
       leadScore: score,
+      scoreFactors: factors,
       status: nextStatus,
     },
   });

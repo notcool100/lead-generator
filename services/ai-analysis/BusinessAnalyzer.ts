@@ -15,7 +15,7 @@ export async function buildBusinessFacts(leadId: string): Promise<BusinessFacts>
     include: { websiteChecks: { orderBy: { checkedAt: "desc" }, take: 1 } },
   });
   const check = lead.websiteChecks[0];
-  const meta = (check?.metadata ?? {}) as { title?: string | null; metaDescription?: string | null };
+  const meta = (check?.metadata ?? {}) as { title?: string | null; metaDescription?: string | null; hasContactForm?: boolean | null; mentionsServiceArea?: boolean | null };
   return {
     businessName: lead.businessName,
     category: lead.category,
@@ -34,6 +34,9 @@ export async function buildBusinessFacts(leadId: string): Promise<BusinessFacts>
       hasBooking: check?.hasBooking ?? null,
       hasMenu: check?.hasMenu ?? null,
       mobileFriendly: check?.mobileFriendly ?? null,
+      hasClearCta: check?.hasClearCta ?? null,
+      hasContactForm: meta.hasContactForm ?? null,
+      mentionsServiceArea: meta.mentionsServiceArea ?? null,
       pageTitle: meta.title ?? null,
       metaDescription: meta.metaDescription ?? null,
     },
@@ -68,6 +71,10 @@ export async function analyzeBusiness(leadId: string, opts: { force?: boolean } 
         tone: a.tone,
         targetAudience: a.targetAudience,
         suggestedCtas: [a.primaryCTA, a.secondaryCTA].filter(Boolean) as string[],
+        services: a.services,
+        serviceArea: a.serviceArea,
+        opportunities: a.opportunities,
+        packageFeatures: a.packageFeatures,
         confidence: a.confidence,
         inputHash: res.cacheKey,
         rawResponse: res.raw as Prisma.InputJsonValue,

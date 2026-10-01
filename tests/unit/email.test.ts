@@ -9,6 +9,7 @@ const facts: OutreachFacts = {
   businessName: "Luna", recipientName: null, category: "restaurant", city: "Lisbon", verifiedObservations: [],
   senderName: "Alex", senderCompany: null, sequenceNumber: 0, previousSubject: null,
   templateSubject: "A quick website preview for {{business_name}}", templateIntro: "I came across {{business_name}} in {{city}}.",
+  offer: { price: "$110/month", includes: ["Website", "Hosting and SSL", "Maintenance"] }, relevantFeatures: [],
 };
 
 describe("email generation", () => {
@@ -17,7 +18,22 @@ describe("email generation", () => {
     expect(e.subject).toBe("A quick website preview for Luna");
     expect(e.body).toContain("I came across Luna in Lisbon.");
     expect(e.body).toContain("{{preview_url}}");
-    expect(lintOutreachEmail(e)).toEqual([]);
+    expect(lintOutreachEmail(e, { price: "$110/month", sequenceNumber: 0 })).toEqual([]);
+  });
+  it("pitches the recurring monthly offer with a low-pressure CTA", () => {
+    const e = deterministicEmail(facts);
+    expect(e.body).toContain("$110/month");
+    expect(e.body).toMatch(/monthly service/);
+    expect(e.body).toContain("Would you be open to taking a quick look at the preview?");
+  });
+  it("lint rejects missing price, discounts and exaggerated promises", () => {
+    const body = "Hi {{preview_url}} " + "x".repeat(40);
+    expect(lintOutreachEmail({ subject: "Hi", body }, { price: "$110/month", sequenceNumber: 0 })).toContain("does not state the monthly price ($110/month)");
+    expect(lintOutreachEmail({ subject: "Hi", body }, { price: "$110/month", sequenceNumber: 1 })).toEqual([]);
+    expect(lintOutreachEmail({ subject: "Hi", body: `${body} We will double your leads.` }).length).toBe(1);
+    expect(lintOutreachEmail({ subject: "Hi", body: `${body} Guaranteed customers!` }).length).toBe(1);
+    expect(lintOutreachEmail({ subject: "Hi", body: `${body} 20% off this week` }).length).toBe(1);
+    expect(lintOutreachEmail({ subject: "Hi", body: `${body} You are losing customers every day.` }).length).toBe(1);
   });
   it("makes no website claims without verified observations", () => {
     expect(deterministicEmail(facts).body).not.toMatch(/noticed/);

@@ -147,7 +147,20 @@ Every step runs as a **background job** (BullMQ + Redis) in a separate **worker*
   - mailcow's outgoing mail name set to `mail.ubucknepal.com` (`smtp_helo_name` in `data/conf/postfix/extra.cf`; this applies to every domain on that server)
   - Port25 independent check: **SPF, reverse DNS and DKIM all pass**. DMARC record in place
 
-### 4.8 Deployment
+### 4.8 Monthly offer and AI cold calling
+- [x] **Offer: managed website + lead generation for $110/month.** Price, currency and what's included are set in Settings → Offer. Emails and calls pitch it as a recurring monthly service, never offer discounts, and are checked for exaggerated promises ("double your leads", "guaranteed", "losing customers"). The email must state the price
+- [x] Analysis adds the business's services, service area, evidence-backed opportunities and the package features that fit it (quote form, free-estimate CTA, before/after gallery, FAQ chatbot…)
+- [x] Lead score uses objective factors only (no/poor website, not mobile-friendly, weak CTA, no contact/quote form, no service area for trades, weak online presence, contactability). Each factor is shown on the lead
+- [x] Previews add a quote/contact form, a "Request a Free Estimate" CTA, service area and a mobile click-to-call bar where they fit
+- [x] **AI calls (Retell + Twilio):** Retell runs the conversation through a Twilio number imported into Retell. Each campaign is set to **off**, **manual** (a "Call now" button on each lead) or **automatic** (call once the preview is live, with one retry after no answer). Calling hours, timezone, daily limits and attempts are set in Settings → Calling
+- [x] Call transcript, recording, summary, cost and outcome (interested, not interested, callback, appointment booked, wrong number, no answer, voicemail, do not contact) are stored in the `calls` table and shown on the lead. Outcomes update the lead pipeline, and "do not contact" suppresses the lead everywhere
+- [x] Setup: set `RETELL_API_KEY` and `RETELL_FROM_NUMBER`, run `pnpm retell:setup` (creates the agent, script, voice, post-call analysis and webhook `/api/webhooks/retell`), then set the printed `RETELL_AGENT_ID`
+- [x] **Country rules per campaign** (US, Australia, UK, New Zealand): timezone, voice and speech language per call. Legal hours are enforced in code: Australia weekdays 9am–8pm, Saturday 9am–5pm, no Sundays or national public holidays; elsewhere 8am–9pm. Australia and the UK need a "checked against the Do Not Call register" confirmation on the campaign, which only covers leads that existed when it was ticked
+- [x] The AI says who it is, the company and that it's an AI in its first sentence
+- [x] Live setup: Twilio SIP trunk `ubuck-retell.pstn.twilio.com`, number +1 217 564 9536 imported into Retell, agent `agent_f940914b578c0f7de776ffa5b1`. Test call worked
+- [ ] Automatic Do Not Call register check (ACMA / TPS) — manual confirmation only for now
+
+### 4.9 Deployment
 - [x] Dockerfile (includes the Claude Code CLI) and `docker-compose.coolify.yml` (web + worker + Redis)
 - [x] Deployed in Coolify (project **AI-Lead-Generator**, environment _production_) from the private GitHub repo `notcool100/lead-generator` via the **anjal-github** app
 - [x] Uses the existing Coolify PostgreSQL. Migrations and the admin seed run automatically on start

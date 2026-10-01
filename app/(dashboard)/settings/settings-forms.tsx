@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
-import type { ComplianceSettings, GeneralSettings } from "@/services/compliance/settings";
+import type { CallingSettings, ComplianceSettings, GeneralSettings, OfferSettings } from "@/services/compliance/settings";
 
-function useSave(key: "compliance" | "general") {
+function useSave(key: "compliance" | "general" | "offer" | "calling") {
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, setPending] = useState(false);
@@ -90,6 +90,62 @@ export function GeneralForm({ initial }: { initial: GeneralSettings }) {
       <Field label="Email template — opening line"><Textarea rows={3} value={s.defaultEmailTemplate.intro} onChange={(e) => setS({ ...s, defaultEmailTemplate: { ...s.defaultEmailTemplate, intro: e.target.value } })} /></Field>
       <div className="flex items-center gap-3">
         <Button type="submit" variant="secondary" disabled={pending}>Save</Button>
+        {msg ? <span className={msg.ok ? "text-sm text-success" : "text-sm text-destructive"}>{msg.text}</span> : null}
+      </div>
+    </form>
+  );
+}
+
+export function OfferForm({ initial }: { initial: OfferSettings }) {
+  const [s, setS] = useState(initial);
+  const [includes, setIncludes] = useState(initial.includes.join("\n"));
+  const { save, msg, pending } = useSave("offer");
+  return (
+    <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); save({ ...s, includes: includes.split("\n").map((x) => x.trim()).filter(Boolean) }); }}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Monthly price"><Input type="number" min={1} step="0.01" value={s.monthlyPrice} onChange={(e) => setS({ ...s, monthlyPrice: Number(e.target.value) })} /></Field>
+        <Field label="Currency" hint="ISO code, e.g. USD"><Input value={s.currency} maxLength={8} onChange={(e) => setS({ ...s, currency: e.target.value.toUpperCase() })} /></Field>
+      </div>
+      <Field label="What the monthly fee includes" hint="One per line. Used in every email and call. No discounts are ever offered automatically.">
+        <Textarea rows={5} value={includes} onChange={(e) => setIncludes(e.target.value)} />
+      </Field>
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="secondary" disabled={pending}>Save offer</Button>
+        {msg ? <span className={msg.ok ? "text-sm text-success" : "text-sm text-destructive"}>{msg.text}</span> : null}
+      </div>
+    </form>
+  );
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export function CallingForm({ initial }: { initial: CallingSettings }) {
+  const [s, setS] = useState(initial);
+  const { save, msg, pending } = useSave("calling");
+  const num = (k: keyof CallingSettings) => (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: Number(e.target.value) });
+  return (
+    <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); save(s); }}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="AI caller name" hint="It always says it's an AI assistant."><Input value={s.agentName} onChange={(e) => setS({ ...s, agentName: e.target.value })} /></Field>
+        <Field label="Default timezone" hint="Used when a campaign has no timezone, e.g. America/Chicago"><Input value={s.timezone} onChange={(e) => setS({ ...s, timezone: e.target.value })} /></Field>
+        <Field label="Calls from (hour)"><Input type="number" min={0} max={23} value={s.startHour} onChange={num("startHour")} /></Field>
+        <Field label="Calls until (hour)"><Input type="number" min={1} max={24} value={s.endHour} onChange={num("endHour")} /></Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {DAYS.map((d, i) => (
+          <label key={d} className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs">
+            <input type="checkbox" className="accent-[var(--primary)]" checked={s.days.includes(i)} onChange={(e) => setS({ ...s, days: e.target.checked ? [...s.days, i].sort() : s.days.filter((x) => x !== i) })} />
+            {d}
+          </label>
+        ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Max calls / day (all campaigns)"><Input type="number" min={0} value={s.maxCallsPerDay} onChange={num("maxCallsPerDay")} /></Field>
+        <Field label="Max attempts / lead" hint="Automatic calls only"><Input type="number" min={1} max={5} value={s.maxAttemptsPerLead} onChange={num("maxAttemptsPerLead")} /></Field>
+        <Field label="Retry after (hours)"><Input type="number" min={1} value={s.retryAfterHours} onChange={num("retryAfterHours")} /></Field>
+      </div>
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="secondary" disabled={pending}>Save calling rules</Button>
         {msg ? <span className={msg.ok ? "text-sm text-success" : "text-sm text-destructive"}>{msg.text}</span> : null}
       </div>
     </form>
