@@ -8,16 +8,22 @@ import { Select } from "@/components/ui/input";
 export function CallModeSelect({ campaignId, value }: { campaignId: string; value: "off" | "manual" | "auto" }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function change(callMode: string) {
-    if (callMode === "auto" && !window.confirm("Leads with a phone number will be called automatically once their preview is ready (within calling hours and limits). Continue?")) return;
-    setError(null);
+    if (
+      callMode === "auto" &&
+      !window.confirm("Every ready lead (phone number + live preview, not called yet) will be queued now, and new leads once their preview is ready. Calls only go out during calling hours. Continue?")
+    )
+      return;
+    setMsg(null);
     const res = await fetch(`/api/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ callMode }) });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
     if (!res.ok) {
-      setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Could not update");
+      setMsg({ ok: false, text: data.error ?? "Could not update" });
       return;
     }
+    if (data.message) setMsg({ ok: true, text: data.message });
     startTransition(() => router.refresh());
   }
 
@@ -28,7 +34,7 @@ export function CallModeSelect({ campaignId, value }: { campaignId: string; valu
         <option value="manual">Manual (Call button)</option>
         <option value="auto">Automatic</option>
       </Select>
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
+      {msg ? <span className={msg.ok ? "text-xs text-success" : "text-xs text-destructive"}>{msg.text}</span> : null}
     </span>
   );
 }

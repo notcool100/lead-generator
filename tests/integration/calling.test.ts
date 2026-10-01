@@ -9,7 +9,7 @@ const enabled = Boolean(process.env.TEST_DATABASE_URL);
 describe.skipIf(!enabled)("AI cold calling", async () => {
   const { prisma } = await import("@/lib/db");
   const { RetellClient } = await import("@/providers/calling/RetellClient");
-  const { placeCall, handleRetellEvent, setRetellClientForTests, CallNotAllowedError } = await import("@/services/calling/callService");
+  const { placeCall, handleRetellEvent, setRetellClientForTests, CallNotAllowedError, queueAutoCalls } = await import("@/services/calling/callService");
   const { saveSettings } = await import("@/services/compliance/settings");
   const { getQueue } = await import("@/queue/queues");
 
@@ -48,8 +48,10 @@ describe.skipIf(!enabled)("AI cold calling", async () => {
   });
   afterAll(async () => {
     setRetellClientForTests(null);
-    // Don't leave delayed retry jobs from this test in the shared Redis queue.
-    for (const j of await getQueue("call-place").getDelayed()) await j.remove();
+    // Don't leave this test's call jobs in the shared Redis queue.
+    const testLeads = new Set((await prisma.lead.findMany({ select: { id: true } })).map((l) => l.id));
+    const q = getQueue("call-place");
+    for (const j of [...(await q.getDelayed()), ...(await q.getWaiting())]) if (testLeads.has(j.data?.leadId)) await j.remove();
     await prisma.$disconnect();
   });
 
@@ -94,7 +96,9 @@ describe.skipIf(!enabled)("AI cold calling", async () => {
 
   it("schedules one retry after no answer in auto mode", async () => {
     const lead = await makeLead("+1 512 555 0101");
-    const { callId } = await placeCall(lead.id, { trigger: "auto", now });
+    // Automatic calls are spaced 2 minutes apart from the previous call.
+    await expect(placeCall(lead.id, { trigger: "auto", now })).rejects.toMatchObject({ permanent: false });
+    const { callId } = await placeCall(lead.id, { trigger: "auto", now: new Date(now.getTime() + 3 * 60_000) });
     const rc = (await prisma.call.findUniqueOrThrow({ where: { id: callId } })).retellCallId!;
     await handleRetellEvent({ event: "call_ended", call: { call_id: rc, call_status: "not_connected", disconnection_reason: "dial_no_answer" } });
     await handleRetellEvent({ event: "call_analyzed", call: { call_id: rc, call_status: "not_connected", disconnection_reason: "dial_no_answer", call_analysis: { custom_analysis_data: { outcome: "no_answer" } } } });
@@ -121,5 +125,31 @@ describe.skipIf(!enabled)("AI cold calling", async () => {
     const lead = await makeLead("+1 512 555 0103");
     await expect(placeCall(lead.id, { trigger: "auto", now })).rejects.toMatchObject({ permanent: true });
     await expect(placeCall(lead.id, { trigger: "manual", now })).resolves.toHaveProperty("callId");
+  });
+
+  it("queues ready, never-called leads when a campaign is switched to automatic, once", async () => {
+    const c = await prisma.campaign.create({ data: { name: "Switch", category: "plumber", country: "United States", status: "running", callMode: "manual" } });
+    const tpl = await prisma.websiteTemplate.upsert({
+      where: { key: "test_tpl" },
+      create: { key: "test_tpl", name: "T", category: "t", description: "t", repositoryPath: "t", configurationSchema: {} },
+      update: {},
+    });
+    const mk = async (phone: string | null, preview: boolean, extra: Record<string, unknown> = {}) => {
+      const l = await prisma.lead.create({
+        data: { campaignId: c.id, businessName: `Q ${Math.random()}`, normalizedName: "q", category: "plumber", country: "United States", phone, source: "mock", status: "preview_ready", ...extra },
+      });
+      if (preview) await prisma.websitePreview.create({ data: { leadId: l.id, templateId: tpl.id, subdomain: `q-${l.id.slice(0, 8)}`, deploymentProvider: "vps", deploymentStatus: "deployed", deploymentUrl: "https://x/p/q", generatedContent: {} } });
+      return l;
+    };
+    const ready = await mk("+1 512 555 0110", true);
+    await mk("+1 512 555 0111", false); // no preview yet → queued later by the deploy step
+    await mk(null, true); // no phone
+    await mk("+1 512 555 0112", true, { doNotContact: true });
+
+    expect(await queueAutoCalls(c.id)).toBe(0); // still manual
+    await prisma.campaign.update({ where: { id: c.id }, data: { callMode: "auto" } });
+    expect(await queueAutoCalls(c.id)).toBe(1);
+    expect(await prisma.job.count({ where: { type: "call-place", leadId: ready.id, status: "queued" } })).toBe(1);
+    expect(await queueAutoCalls(c.id)).toBe(0); // already queued → not twice
   });
 });

@@ -59,9 +59,10 @@ export async function placeCall(leadId: string, opts: { trigger: CallTrigger; us
   });
   const [settings, compliance, offer] = await Promise.all([getSettings("calling"), getSettings("compliance"), getSettings("offer")]);
   const since = new Date(now.getTime() - 86_400_000);
-  const [callsLast24h, campaignCallsLast24h] = await Promise.all([
+  const [callsLast24h, campaignCallsLast24h, lastAnyCall] = await Promise.all([
     prisma.call.count({ where: { createdAt: { gte: since }, status: { not: "cancelled" } } }),
     lead.campaignId ? prisma.call.count({ where: { campaignId: lead.campaignId, createdAt: { gte: since }, status: { not: "cancelled" } } }) : 0,
+    prisma.call.findFirst({ where: { status: { not: "cancelled" } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
   const toNumber = toE164(lead.phone, lead.country);
   const market = lead.campaign?.callMarket ?? marketForCountry(lead.country);
@@ -84,6 +85,7 @@ export async function placeCall(leadId: string, opts: { trigger: CallTrigger; us
     lastCallAt: lead.calls[0]?.createdAt ?? null,
     callsLast24h,
     campaignCallsLast24h,
+    lastAnyCallAt: lastAnyCall?.createdAt ?? null,
   });
   if (!decision.ok) {
     throw new CallNotAllowedError(decision.reason, decision.permanent, decision.permanent ? 0 : Math.max(60_000, decision.retryAt.getTime() - now.getTime()));
@@ -164,8 +166,43 @@ export async function placeCall(leadId: string, opts: { trigger: CallTrigger; us
 /** Enqueues an automatic call when the lead's campaign is in auto mode. */
 export async function autoCallIfEnabled(leadId: string) {
   const lead = await prisma.lead.findUnique({ where: { id: leadId }, include: { campaign: { select: { callMode: true } } } });
-  if (!lead || lead.campaign?.callMode !== "auto" || !lead.phone || lead.doNotContact || !callingConfigured().ok) return [];
+  if (!lead || lead.campaign?.callMode !== "auto" || !lead.phone || lead.doNotContact || !(callingConfigured().ok || g.__retell)) return [];
   return [{ queue: "call-place" as const, payload: { leadId, trigger: "auto" as const } }];
+}
+
+/**
+ * Queues an automatic call for every lead in an auto campaign that is ready (phone, live preview)
+ * and hasn't been called or queued yet. Used when a campaign is switched to Automatic or its
+ * Do Not Call check is confirmed. Calls still wait for calling hours and limits at dial time.
+ */
+export async function queueAutoCalls(campaignId: string): Promise<number> {
+  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { callMode: true } });
+  if (campaign?.callMode !== "auto" || !(callingConfigured().ok || g.__retell)) return 0;
+  const leads = await prisma.lead.findMany({
+    where: {
+      campaignId,
+      phone: { not: null },
+      doNotContact: false,
+      lastCallOutcome: null,
+      status: { notIn: ["replied", "interested", "not_interested", "converted", "suppressed", "rejected"] },
+      previews: { some: { deploymentStatus: "deployed" } },
+      calls: { none: {} },
+    },
+    select: { id: true },
+  });
+  if (!leads.length) return 0;
+  const pending = await prisma.job.findMany({
+    where: { type: "call-place", status: { in: ["queued", "processing"] }, leadId: { in: leads.map((l) => l.id) } },
+    select: { leadId: true },
+  });
+  const skip = new Set(pending.map((j) => j.leadId));
+  let queued = 0;
+  for (const l of leads) {
+    if (skip.has(l.id)) continue;
+    await enqueue("call-place", { leadId: l.id, trigger: "auto" });
+    queued++;
+  }
+  return queued;
 }
 
 const STATUS_MAP: Record<RetellCall["call_status"], "registered" | "ongoing" | "ended" | "not_connected" | "error"> = {

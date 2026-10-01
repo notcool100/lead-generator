@@ -93,6 +93,14 @@ describe("calling rules", () => {
     expect(callDecision({ ...base, campaignCallsLast24h: 10, trigger: "manual" })).toMatchObject({ ok: false, permanent: true });
     expect(callDecision({ ...base, activeCall: true, trigger: "manual" })).toMatchObject({ ok: false, permanent: true });
   });
+  it("spaces automatic calls about 2 minutes apart, but not manual ones", () => {
+    const justNow = new Date(WED_2PM.getTime() - 30_000);
+    const d = callDecision({ ...base, lastAnyCallAt: justNow });
+    if (d.ok || d.permanent) throw new Error("expected a deferral");
+    expect(d.retryAt.getTime()).toBe(justNow.getTime() + 2 * 60_000);
+    expect(callDecision({ ...base, trigger: "manual", lastAnyCallAt: justNow })).toEqual({ ok: true });
+    expect(callDecision({ ...base, lastAnyCallAt: new Date(WED_2PM.getTime() - 5 * 60_000) })).toEqual({ ok: true });
+  });
 });
 
 describe("country calling rules", () => {

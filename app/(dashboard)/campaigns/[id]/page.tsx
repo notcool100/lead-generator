@@ -16,7 +16,7 @@ export default async function CampaignPage(props: PageProps<"/campaigns/[id]">) 
   const campaign = await prisma.campaign.findUnique({ where: { id } });
   if (!campaign) notFound();
 
-  const [leads, byStatus, sent, calls, jobs] = await Promise.all([
+  const [leads, byStatus, sent, calls, waitingCalls, jobs] = await Promise.all([
     prisma.lead.findMany({
       where: { campaignId: id },
       orderBy: [{ leadScore: "desc" }, { createdAt: "desc" }],
@@ -26,6 +26,7 @@ export default async function CampaignPage(props: PageProps<"/campaigns/[id]">) 
     prisma.lead.groupBy({ by: ["status"], where: { campaignId: id }, _count: { _all: true } }),
     prisma.outreachMessage.count({ where: { campaignId: id, status: "sent" } }),
     prisma.call.groupBy({ by: ["outcome"], where: { campaignId: id }, _count: { _all: true } }),
+    prisma.job.count({ where: { type: "call-place", status: { in: ["queued", "processing"] }, leadId: { in: (await prisma.lead.findMany({ where: { campaignId: id }, select: { id: true } })).map((l) => l.id) } } }),
     prisma.job.groupBy({ by: ["status"], where: { OR: [{ campaignId: id }, { leadId: { in: (await prisma.lead.findMany({ where: { campaignId: id }, select: { id: true } })).map((l) => l.id) } }] }, _count: { _all: true } }),
   ]);
   const exhausted = campaign.discoveryCursor === CURSOR_DONE;
@@ -61,7 +62,7 @@ export default async function CampaignPage(props: PageProps<"/campaigns/[id]">) 
         <Stat label="Rejected" value={count(["rejected"])} />
         <Stat label="Previews ready" value={count(["preview_ready", "outreach_draft", "approved", "contacted", "replied", "interested", "converted"])} />
         <Stat label="Emails sent" value={sent} />
-        <Stat label="AI calls" value={callTotal} hint={callTotal ? `${callsPositive} interested / callback` : campaign.callMode === "off" ? "calling off" : undefined} />
+        <Stat label="AI calls" value={callTotal} hint={[callTotal ? `${callsPositive} interested / callback` : campaign.callMode === "off" ? "calling off" : null, waitingCalls ? `${waitingCalls} waiting to be called` : null].filter(Boolean).join(" · ") || undefined} />
         <Stat label="Jobs in flight" value={jobCount("queued") + jobCount("processing")} hint={jobCount("failed") ? `${jobCount("failed")} failed` : undefined} />
       </div>
 

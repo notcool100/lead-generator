@@ -25,7 +25,12 @@ export interface CallDecisionInput {
   lastCallAt: Date | null;
   callsLast24h: number;
   campaignCallsLast24h: number;
+  /** Most recent call placed to anyone (spaces out automatic calls). */
+  lastAnyCallAt?: Date | null;
 }
+
+/** Minimum gap between automatic calls, so a queue doesn't all dial the moment calling hours open. */
+export const AUTO_CALL_GAP_MS = 2 * 60_000;
 
 export type CallDecision =
   | { ok: true }
@@ -98,6 +103,10 @@ export function callDecision(i: CallDecisionInput): CallDecision {
     if (!automatic)
       return { ok: false, permanent: true, reason: `Outside calling hours (${s.startHour}:00–${s.endHour}:00 ${s.timezone}; legal: ${CALL_MARKETS[i.market].legalHours})` };
     return { ok: false, permanent: false, reason: "Outside calling hours", retryAt: next };
+  }
+
+  if (automatic && i.lastAnyCallAt && i.now.getTime() - i.lastAnyCallAt.getTime() < AUTO_CALL_GAP_MS) {
+    return { ok: false, permanent: false, reason: "Spacing out automatic calls", retryAt: new Date(i.lastAnyCallAt.getTime() + AUTO_CALL_GAP_MS) };
   }
 
   const tomorrow = new Date(i.now.getTime() + 3_600_000 * 3);
