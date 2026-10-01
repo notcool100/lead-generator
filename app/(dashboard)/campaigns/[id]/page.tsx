@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/action-button";
 import { CallModeSelect } from "@/components/call-mode-select";
+import { CallTimezoneSelect } from "@/components/call-timezone-select";
 import { LeadsTable } from "@/components/leads-table";
 import { EmptyState, KV, PageHeader, Stat } from "@/components/page-header";
 import { StatusBadge } from "@/components/status";
@@ -9,12 +10,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CALL_MARKETS } from "@/lib/call-markets";
 import { prisma } from "@/lib/db";
 import { formatDate, humanize } from "@/lib/utils";
+import { getSettings } from "@/services/compliance/settings";
 import { CURSOR_DONE, DISCOVERY_BATCH_SIZE } from "@/services/lead-discovery/discoveryService";
 
 export default async function CampaignPage(props: PageProps<"/campaigns/[id]">) {
   const { id } = await props.params;
   const campaign = await prisma.campaign.findUnique({ where: { id } });
   if (!campaign) notFound();
+  const callingSettings = await getSettings("calling");
+  const marketTz = CALL_MARKETS[campaign.callMarket].timezones;
+  // Same fallback the dialler uses when the campaign has no timezone of its own.
+  const effectiveTz = campaign.callTimezone ?? (marketTz.includes(callingSettings.timezone) ? callingSettings.timezone : marketTz[0]);
 
   const [leads, byStatus, sent, calls, waitingCalls, jobs] = await Promise.all([
     prisma.lead.findMany({
@@ -87,7 +93,9 @@ export default async function CampaignPage(props: PageProps<"/campaigns/[id]">) 
                 <>
                   <KV label="Daily call limit">{campaign.dailyCallLimit}</KV>
                   <KV label="Calling rules">{CALL_MARKETS[campaign.callMarket].label}<p className="text-xs text-muted-foreground">{CALL_MARKETS[campaign.callMarket].legalHours}</p></KV>
-                  <KV label="Call timezone">{campaign.callTimezone ?? "Settings default"}</KV>
+                  <KV label="Call timezone">
+                    <CallTimezoneSelect campaignId={id} value={effectiveTz} options={marketTz} />
+                  </KV>
                   <KV label="Voice">{CALL_MARKETS[campaign.callMarket].voices.find((v) => v.id === campaign.callVoiceId)?.label ?? campaign.callVoiceId ?? CALL_MARKETS[campaign.callMarket].voices[0].label}</KV>
                   {CALL_MARKETS[campaign.callMarket].dncRegister ? (
                     <KV label="Do Not Call check">

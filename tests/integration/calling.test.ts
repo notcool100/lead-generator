@@ -152,4 +152,18 @@ describe.skipIf(!enabled)("AI cold calling", async () => {
     expect(await prisma.job.count({ where: { type: "call-place", leadId: ready.id, status: "queued" } })).toBe(1);
     expect(await queueAutoCalls(c.id)).toBe(0); // already queued → not twice
   });
+
+  it("uses the country's timezone when an Australian campaign has none (never UTC)", async () => {
+    const c = await prisma.campaign.create({
+      data: { name: "AU", category: "builder", country: "Australia", status: "running", callMode: "manual", callMarket: "au", dncCheckedAt: new Date(Date.now() + 60_000) },
+    });
+    const lead = await prisma.lead.create({
+      data: { campaignId: c.id, businessName: "AU Builder", normalizedName: "au", category: "builder", country: "Australia", phone: "(07) 5520 0733", source: "mock", status: "preview_ready" },
+    });
+    // Settings timezone is UTC (beforeAll). Thu 2026-10-01 19:00 UTC = Fri 05:00 in Sydney → refused.
+    await expect(placeCall(lead.id, { trigger: "manual", now: new Date("2026-10-01T19:00:00Z") })).rejects.toMatchObject({ permanent: true, message: expect.stringMatching(/Australia\/Sydney/) });
+    // Fri 2026-10-02 01:00 UTC = Fri 11:00 in Sydney → allowed.
+    await expect(placeCall(lead.id, { trigger: "manual", now: new Date("2026-10-02T01:00:00Z") })).resolves.toHaveProperty("callId");
+    expect(retell.calls.at(-1)!.toNumber).toBe("+61755200733");
+  });
 });

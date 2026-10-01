@@ -67,7 +67,10 @@ export async function placeCall(leadId: string, opts: { trigger: CallTrigger; us
   const toNumber = toE164(lead.phone, lead.country);
   const market = lead.campaign?.callMarket ?? marketForCountry(lead.country);
   const marketInfo = CALL_MARKETS[market];
-  const windowSettings = { ...settings, timezone: lead.campaign?.callTimezone || settings.timezone };
+  // Campaign timezone first; otherwise the Settings timezone only if it belongs to this country, else the country's main timezone
+  // (never e.g. UTC for Australian leads, which would put calls in the middle of their night).
+  const timezone = lead.campaign?.callTimezone || (marketInfo.timezones.includes(settings.timezone) ? settings.timezone : marketInfo.timezones[0]);
+  const windowSettings = { ...settings, timezone };
 
   const decision = callDecision({
     trigger: opts.trigger,
