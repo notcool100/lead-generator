@@ -3,7 +3,8 @@ import { BusinessAnalysisSchema } from "@/prompts/business-analysis";
 import { WebsiteCopySchema } from "@/prompts/website-content";
 import { MockAIProvider } from "@/providers/ai/MockAIProvider";
 import { PreviewConfigSchema } from "@/types/preview";
-import { renderPreviewHtml } from "@/templates/render";
+import { createHash } from "node:crypto";
+import { previewCsp, renderPreviewHtml } from "@/templates/render";
 import { matchTemplateByKeyword } from "@/templates/registry";
 import "@/prompts/outreach";
 
@@ -75,6 +76,71 @@ describe("template rendering", () => {
     expect(matchTemplateByKeyword("Hair salon")).toBe("salon");
     expect(matchTemplateByKeyword("Wedding venue")).toBe("event_venue");
     expect(matchTemplateByKeyword("florist")).toBeNull();
+    expect(matchTemplateByKeyword("Construction company")).toBe("construction");
+    expect(matchTemplateByKeyword("Roofing contractor")).toBe("construction");
+    expect(matchTemplateByKeyword("General construction services")).toBe("construction");
+  });
+});
+
+describe("construction (industrial) template", () => {
+  function constructionConfig() {
+    const cfg = sampleConfig();
+    cfg.templateKey = "construction";
+    cfg.category = "roofing contractor";
+    cfg.content.offeringsTitle = "Services";
+    cfg.content.offeringsPlaceholder = ["New builds", "Renovations"];
+    return cfg;
+  }
+  it("renders the Summit layout from lead data without em-dashes", () => {
+    const cfg = constructionConfig();
+    cfg.content.rating = { value: 4.8, count: 126, source: "google" };
+    const html = renderPreviewHtml(cfg);
+    expect(html).toContain("family=Anton");
+    expect(html).toContain('id="projects"');
+    expect(html).toContain("Roofing contractor, Lisbon, Portugal");
+    expect(html).toContain("4.8★");
+    expect(html).toContain("Average from 126 reviews");
+    expect(html).toContain("Not an official website");
+    expect(html).toContain("prefers-reduced-motion:no-preference");
+    expect(html).toContain('data-count="4.8"');
+    expect(html).toContain("videos.pexels.com");
+    expect(html).not.toMatch(/[\u2014\u2013]/);
+  });
+  it("runs only the two static, hash-pinned scripts (no lead data inside them)", () => {
+    const cfg = constructionConfig();
+    cfg.businessName = "Zebra Unique Builders";
+    const html = renderPreviewHtml(cfg);
+    const csp = previewCsp(cfg);
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    expect(scripts).toHaveLength(2);
+    expect(html.match(/<script/g)).toHaveLength(2);
+    for (const js of scripts) {
+      expect(csp).toContain(`'sha256-${createHash("sha256").update(js, "utf8").digest("base64")}'`);
+      expect(js).not.toContain("Zebra");
+    }
+    expect(csp).not.toContain("unsafe-inline' https://fonts.googleapis.com; script");
+    expect(csp).not.toMatch(/script-src[^;]*unsafe/);
+    // other templates keep the strict no-script policy
+    expect(previewCsp(sampleConfig())).not.toContain("script-src");
+    expect(renderPreviewHtml(sampleConfig())).not.toMatch(/<script/i);
+  });
+  it("marks unknown facts and services as placeholders", () => {
+    const html = renderPreviewHtml(constructionConfig());
+    expect(html).toContain("Sample service, confirmed with you before launch");
+    expect(html).toContain("Years building");
+    expect(html).toContain("Confirmed with you before launch");
+  });
+  it("escapes every dynamic value", () => {
+    const cfg = constructionConfig();
+    cfg.businessName = `<script>alert(1)</script>`;
+    cfg.headline = `"><img src=x onerror=alert(1)>`;
+    cfg.category = `<b>x</b>`;
+    cfg.primaryCTA.href = "javascript:alert(1)";
+    const html = renderPreviewHtml(cfg);
+    expect(html).not.toContain("<script>alert");
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain("<b>x</b>");
+    expect(html).not.toContain("javascript:");
   });
 });
 

@@ -17,6 +17,8 @@ export type ImageRef = z.infer<typeof ImageRefSchema>;
 export const PreviewConfigSchema = z.object({
   templateKey: z.enum(TEMPLATE_KEYS),
   businessName: z.string().min(1).max(160),
+  /** The lead's business category (e.g. "roofing contractor"). Optional for configs stored before it existed. */
+  category: z.string().max(120).optional(),
   headline: z.string().min(1).max(140),
   subheadline: z.string().max(300),
   primaryCTA: z.object({ label: z.string().max(40), href: z.string().max(300) }),

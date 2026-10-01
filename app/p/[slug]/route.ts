@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { renderPreviewHtml } from "@/templates/render";
+import { previewCsp, renderPreviewHtml } from "@/templates/render";
 import { PreviewConfigSchema } from "@/types/preview";
 
 /** Public preview page. Rendered from the stored, validated config (no AI output is executed). */
@@ -14,7 +14,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/p/[slug]">) {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "X-Robots-Tag": "noindex, nofollow",
-      "Content-Security-Policy": "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+      "Content-Security-Policy": previewCsp(config.data),
       "Cache-Control": "public, max-age=60",
     },
   });

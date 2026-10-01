@@ -21,6 +21,7 @@ const CATEGORY_TAGS: { match: RegExp; tags: Tag[] }[] = [
   { match: /clinic|doctor|physio|medical/, tags: [["amenity", "clinic"], ["amenity", "doctors"], ["healthcare", "physiotherapist"]] },
   { match: /wedding|venue|event|banquet|conference/, tags: [["amenity", "events_venue"], ["amenity", "conference_centre"], ["amenity", "community_centre"]] },
   { match: /real estate|estate agent|realtor|property|letting/, tags: [["office", "estate_agent"], ["shop", "estate_agent"]] },
+  { match: /construct|contractor|builder|building|roof|carpent|joiner|concrete|civil|excavat|earthwork|renovat|remodel|scaffold|plaster|brick|mason|demolition|fabricat/, tags: [["office", "construction_company"], ["craft", "builder"], ["craft", "roofer"], ["craft", "carpenter"], ["craft", "plasterer"], ["craft", "bricklayer"], ["craft", "scaffolder"], ["craft", "stonemason"], ["office", "contractor"]] },
   { match: /lawyer|law|solicitor|accountant|consult|architect|insurance|professional/, tags: [["office", "lawyer"], ["office", "accountant"], ["office", "consulting"], ["office", "architect"], ["office", "insurance"]] },
 ];
 

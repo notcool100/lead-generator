@@ -22,7 +22,7 @@ export interface SourceOption {
   default: boolean;
 }
 
-const CATEGORIES = ["restaurant", "cafe", "hotel", "bar", "gym", "salon", "dentist", "event venue", "real estate", "professional services"];
+const CATEGORIES = ["restaurant", "cafe", "hotel", "bar", "gym", "salon", "dentist", "event venue", "real estate", "professional services", "construction"];
 
 const WEBSITE_OPTIONS = [
   { value: "no_website", label: "No website", description: "No official website could be found" },

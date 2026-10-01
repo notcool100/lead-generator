@@ -52,7 +52,8 @@ ${NO_FABRICATION_RULES}
 - "about" must only restate provided facts (category, location, rating, description). Return null if there is too little to say truthfully.
 - highlights: up to 4 short factual points (e.g. "4.7★ from 230 reviews", "In the heart of Porto"). Empty array if none.
 - Never mention prices, specific dishes/services, years in business or awards unless present in facts.
-- paletteIndex must be less than paletteCount.`;
+- paletteIndex must be less than paletteCount.
+- When templateKey is "construction" the headline is set in huge uppercase type: keep it to a bold statement of at most 5 words (e.g. "Built right in Perth").`;
 
 export function websiteCopyPrompt(facts: WebsiteCopyFacts) {
   return `Write the homepage copy JSON for this business.\n\n${factsBlock(facts)}`;

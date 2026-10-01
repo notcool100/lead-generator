@@ -91,11 +91,13 @@ export async function generatePreview(leadId: string, opts: { templateKey?: stri
       serviceArea: pkg.has("Service-area information") ? (analysis?.serviceArea ?? null) : null,
     };
     // Services the analysis found in the business's own data; descriptions stay generic (never invented).
-    const services = ((analysis?.services as string[] | null) ?? []).filter((x) => x.trim()).slice(0, 3);
+    // The industrial layout lists up to six services; the others show three.
+    const services = ((analysis?.services as string[] | null) ?? []).filter((x) => x.trim()).slice(0, tpl.layout === "industrial" ? 6 : 3);
 
     const config: PreviewConfig = PreviewConfigSchema.parse({
       templateKey,
       businessName: lead.businessName,
+      category: lead.category.slice(0, 120),
       headline: c.headline,
       subheadline: c.subheadline,
       primaryCTA: features.freeEstimate ? { label: "Request a Free Estimate", href: "#quote" } : { label: c.primaryCTALabel, href: primaryHref },

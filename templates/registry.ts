@@ -3,7 +3,7 @@
  * PreviewConfig, and templates/render.ts turns that into a static page.
  */
 export const TEMPLATE_KEYS = [
-  "restaurant", "cafe", "hotel", "salon", "gym", "dentist", "event_venue", "real_estate", "professional_services",
+  "restaurant", "cafe", "hotel", "salon", "gym", "dentist", "event_venue", "real_estate", "professional_services", "construction",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 
@@ -19,6 +19,7 @@ export const FONT_PAIRS = {
   "spacegrotesk-inter": { heading: "Space Grotesk", body: "Manrope" },
   "cormorant-lato": { heading: "Cormorant Garamond", body: "Manrope" },
   "manrope-manrope": { heading: "Manrope", body: "Manrope" },
+  "anton-archivo": { heading: "Anton", body: "Archivo" },
 } as const;
 export type FontPairKey = keyof typeof FONT_PAIRS;
 
@@ -54,7 +55,8 @@ export interface TemplateDefinition {
   imageQueries: ImageQueries;
   /** Kept for backwards compatibility (single query). */
   imageQuery: string;
-  layout: "split" | "fullbleed";
+  /** "industrial" pages are rendered by templates/industrial.ts (Summit-style construction layout). */
+  layout: "split" | "fullbleed" | "industrial";
   /** Invitation line for the parallax band. Never a factual claim about the business. */
   statement: string;
   /** Final call-to-action headline (invitation, not a claim). */
@@ -231,6 +233,28 @@ export const TEMPLATES: Record<TemplateKey, TemplateDefinition> = {
     closing: "Book a consultation",
     galleryTitle: "The office",
     aboutTitle: "Who we are",
+  },
+  construction: {
+    key: "construction", name: "Summit", description: "Bold industrial layout for builders and contractors: giant type, services index, project reel and quote form.",
+    keywords: [
+      "construction", "contractor", "builder", "building", "roofing", "roofer", "carpentry", "carpenter", "joinery", "concrete",
+      "civil", "excavation", "earthworks", "renovation", "remodel", "scaffold", "plasterer", "plastering", "bricklayer", "masonry",
+      "demolition", "steel fabrication", "fabrication", "infrastructure",
+    ],
+    defaultFontPair: "anton-archivo", headingWeight: 500,
+    // Summit: warm paper, near-black ink, safety orange
+    palettes: [
+      { primary: "#0f1113", accent: "#ff5c1f", background: "#f5f3ee", surface: "#eae6dd", text: "#0f1113" },
+    ],
+    offeringsTitle: "Services",
+    offeringsPlaceholder: ["New builds", "Renovations & extensions", "Commercial fit-outs", "Concrete & foundations", "Project management", "Repairs & maintenance"],
+    imageQueries: { hero: "construction site crane building", ambience: "construction workers on site", detail: "steel structure construction detail", people: "construction worker hard hat" },
+    imageQuery: "construction site crane",
+    layout: "industrial",
+    statement: "Safety is not a priority. It's a value.",
+    closing: "Build what matters.",
+    galleryTitle: "Recent projects",
+    aboutTitle: "Built properly. Built to last.",
   },
 };
 

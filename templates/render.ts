@@ -1,5 +1,7 @@
 import { FONT_PAIRS, TEMPLATES, type Palette, type TemplateDefinition } from "./registry";
 import { icon } from "./icons";
+import { esc, isDark, luminance, mix, monogram, onColor, photoCredits, picture, safeHref, stars } from "./shared";
+import { INDUSTRIAL_CSP_EXTRA, renderIndustrialHtml } from "./industrial";
 import type { ImageRef, PreviewConfig } from "@/types/preview";
 
 /**
@@ -17,31 +19,7 @@ import type { ImageRef, PreviewConfig } from "@/types/preview";
  * - Light and dark mode: dark tokens are derived from the template palette.
  */
 
-const esc = (s: string | null | undefined) =>
-  (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-function safeHref(href: string): string {
-  const h = href.trim();
-  if (/^(https?:|mailto:|tel:|#)/i.test(h)) return esc(h);
-  return "#visit";
-}
-
 // ───────────────────────── colour helpers ─────────────────────────
-
-const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-function mix(a: string, b: string, t: number) {
-  const [x, y] = [rgb(a), rgb(b)];
-  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
-}
-function luminance(h: string) {
-  const [r, g, b] = rgb(h).map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-const isDark = (h: string) => luminance(h) < 0.2;
-const onColor = (h: string) => (luminance(h) > 0.4 ? "#141414" : "#fafafa");
 
 function tokens(p: Palette) {
   return {
@@ -87,44 +65,6 @@ function paletteFor(t: TemplateDefinition, cfg: PreviewConfig): Palette {
 
 // ───────────────────────── images ─────────────────────────
 
-function srcset(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname === "images.unsplash.com") {
-      return [640, 960, 1400, 2000]
-        .map((w) => {
-          u.searchParams.set("w", String(w));
-          u.searchParams.set("q", "80");
-          u.searchParams.set("auto", "format");
-          u.searchParams.set("fit", "crop");
-          return `${u.toString()} ${w}w`;
-        })
-        .join(", ");
-    }
-    if (u.hostname === "images.pexels.com") {
-      return [640, 960, 1400, 2000]
-        .map((w) => {
-          u.searchParams.set("auto", "compress");
-          u.searchParams.set("cs", "tinysrgb");
-          u.searchParams.set("w", String(w));
-          return `${u.toString()} ${w}w`;
-        })
-        .join(", ");
-    }
-  } catch {
-    /* fall through */
-  }
-  return null;
-}
-
-function picture(img: ImageRef | null, opts: { cls?: string; sizes?: string; eager?: boolean; label?: string; variant?: number } = {}) {
-  if (!img) {
-    return `<div class="ph ph-${(opts.variant ?? 0) % 4} ${opts.cls ?? ""}" role="img" aria-label="${esc(opts.label ?? "Photo placeholder")}">${icon("sparkle", "ph-icon")}</div>`;
-  }
-  const set = srcset(img.url);
-  return `<img class="${opts.cls ?? ""}" src="${esc(img.url)}"${set ? ` srcset="${esc(set)}" sizes="${esc(opts.sizes ?? "100vw")}"` : ""} alt="${esc(img.alt)}" ${opts.eager ? 'fetchpriority="high" loading="eager"' : 'loading="lazy"'} decoding="async" referrerpolicy="no-referrer">`;
-}
-
 /**
  * Assigns stored images to page roles.
  * `gallery` order (see images.ts): about, about-2, band, offers x3, gallery x4, visit.
@@ -145,34 +85,21 @@ function allocate(cfg: PreviewConfig) {
   };
 }
 
-// ───────────────────────── small pieces ─────────────────────────
-
-function stars(value: number) {
-  const out: string[] = [];
-  for (let i = 1; i <= 5; i++) {
-    out.push(value >= i - 0.25 ? icon("star", "star") : value >= i - 0.75 ? icon("starHalf", "star") : icon("starEmpty", "star star-empty"));
-  }
-  return `<span class="stars" aria-label="${value.toFixed(1)} out of 5">${out.join("")}</span>`;
-}
-
-/** Simple monogram mark (one or two initials in a circle). */
-function monogram(name: string) {
-  const letters = name
-    .replace(/[^\p{L}\p{N}\s]/gu, "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-  return `<span class="mark" aria-hidden="true">${esc(letters || "*")}</span>`;
-}
-
 const SOCIAL_ICONS: Record<string, "instagram" | "facebook" | "tiktok"> = { instagram: "instagram", facebook: "facebook", tiktok: "tiktok" };
 
 // ───────────────────────── page ─────────────────────────
 
+const BASE_CSP =
+  "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+
+/** Content-Security-Policy for a rendered preview. Only the industrial layout runs (hash-pinned) scripts. */
+export function previewCsp(config: PreviewConfig): string {
+  return TEMPLATES[config.templateKey].layout === "industrial" ? `${BASE_CSP}; ${INDUSTRIAL_CSP_EXTRA}` : BASE_CSP;
+}
+
 export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boolean } = { watermark: true }): string {
   const t = TEMPLATES[config.templateKey];
+  if (t.layout === "industrial") return renderIndustrialHtml(config, opts);
   const fonts = FONT_PAIRS[t.defaultFontPair];
   const palette = paletteFor(t, config);
   const light = tokens(palette);
@@ -402,12 +329,7 @@ export function renderPreviewHtml(config: PreviewConfig, opts: { watermark?: boo
       return `<a href="${esc(url)}" target="_blank" rel="noopener" aria-label="${esc(name)}">${ic ? icon(ic, "social-icon") : esc(name.slice(0, 2))}</a>`;
     })
     .join("");
-  const seen = new Set<string>();
-  const credits = [config.images.hero, ...config.images.gallery]
-    .filter((i): i is ImageRef => Boolean(i?.attribution) && !seen.has(i!.attribution!) && Boolean(seen.add(i!.attribution!)))
-    .slice(0, 8)
-    .map((i) => (i.attributionUrl ? `<a href="${esc(i.attributionUrl)}" rel="noopener" target="_blank">${esc(i.attribution)}</a>` : esc(i.attribution)))
-    .join(", ");
+  const credits = photoCredits([config.images.hero, ...config.images.gallery]);
   const year = new Date(config.generatedAt).getFullYear();
 
   const navLinks = `<a href="#about">About</a><a href="#offerings">${esc(k.offeringsTitle)}</a><a href="#gallery">Gallery</a><a href="#visit">Visit</a>`;
