@@ -182,6 +182,10 @@ model Campaign {
   minLeadScore           Int            @default(50) @map("min_lead_score")
   /// Lead sources for discovery, e.g. ["google_places","openstreetmap","web_search"]. Empty = LEAD_PROVIDER env.
   leadSources            String[]       @default([]) @map("lead_sources")
+  /// Created and run by Autopilot: researched, launched and auto-sent without human steps.
+  autopilot              Boolean        @default(false)
+  /// Why Autopilot chose this country / region / business type.
+  researchNotes          String?        @map("research_notes")
   /// Provider cursor so each discovery run continues where the last one stopped ("done" = sources exhausted).
   discoveryCursor        String?        @map("discovery_cursor")
   createdById            String?        @map("created_by_id") @db.Uuid

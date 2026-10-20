@@ -3,13 +3,14 @@ import { deterministicEmail, lintOutreachEmail, renderTemplateString, type Outre
 import { buildVerifiedObservations } from "@/services/outreach/observations";
 import { buildFooter, renderEmailBodies } from "@/services/email/EmailSender";
 import { ComplianceSettingsSchema } from "@/services/compliance/settings";
+import { upgradeLegacyIncludes } from "@/lib/offer";
 import { isReservedDomain } from "@/providers/email/EmailProvider";
 
 const facts: OutreachFacts = {
   businessName: "Luna", recipientName: null, category: "restaurant", city: "Lisbon", verifiedObservations: [],
   senderName: "Alex", senderCompany: null, sequenceNumber: 0, previousSubject: null,
   templateSubject: "A quick website preview for {{business_name}}", templateIntro: "I came across {{business_name}} in {{city}}.",
-  offer: { price: "$110/month", includes: ["Website", "Hosting and SSL", "Maintenance"] }, relevantFeatures: [],
+  offer: { price: "$110/month", includes: ["Website", "Hosting and SSL", "Maintenance"] }, relevantFeatures: [], onlyDirectoryListings: false, demoIsExample: false,
 };
 
 describe("email generation", () => {
@@ -34,6 +35,25 @@ describe("email generation", () => {
     expect(lintOutreachEmail({ subject: "Hi", body: `${body} Guaranteed customers!` }).length).toBe(1);
     expect(lintOutreachEmail({ subject: "Hi", body: `${body} 20% off this week` }).length).toBe(1);
     expect(lintOutreachEmail({ subject: "Hi", body: `${body} You are losing customers every day.` }).length).toBe(1);
+  });
+  it("says directory and map listings only, and frames an industrial link as an example", () => {
+    const e = deterministicEmail({ ...facts, category: "construction", onlyDirectoryListings: true, demoIsExample: true });
+    expect(e.body).toMatch(/only find Luna on directory and map listings/);
+    expect(e.body).toMatch(/example of what a website for a company like Luna could look like/);
+    expect(e.body).not.toMatch(/\d\s?[–-]\s?\d\s*pages?|small/i);
+    expect(lintOutreachEmail(e, { price: "$110/month", sequenceNumber: 0 })).toEqual([]);
+  });
+  it("lint rejects page counts and 'small' content updates", () => {
+    const body = "Hi {{preview_url}} " + "x".repeat(40);
+    expect(lintOutreachEmail({ subject: "Hi", body: `${body} A 5–7 page website.` }, { sequenceNumber: 1 }).length).toBe(1);
+    expect(lintOutreachEmail({ subject: "Hi", body: `${body} Includes small content updates.` }, { sequenceNumber: 1 }).length).toBe(1);
+  });
+  it("rewrites the legacy offer wording", () => {
+    expect(upgradeLegacyIncludes(["Professional 5–7 page website", "Small content updates", "Hosting"])).toEqual([
+      "Complete multi-page website with all content written for you",
+      "Full website content and ongoing content updates",
+      "Hosting",
+    ]);
   });
   it("makes no website claims without verified observations", () => {
     expect(deterministicEmail(facts).body).not.toMatch(/noticed/);

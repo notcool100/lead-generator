@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { upgradeLegacyIncludes } from "@/lib/offer";
 
 /**
  * Admin-editable, non-secret configuration. Secrets always stay in env vars.
@@ -44,11 +45,13 @@ export type GeneralSettings = z.infer<typeof GeneralSettingsSchema>;
 export const OfferSettingsSchema = z.object({
   monthlyPrice: z.number().min(1).max(100_000).default(110),
   currency: z.string().trim().min(1).max(8).default("USD"),
+  /** Demo site sent to industrial / construction companies instead of a per-lead preview. */
+  industrialDemoUrl: z.string().trim().url().max(300).default("https://summit.ubucknepal.com/"),
   includes: z
     .array(z.string().trim().min(1).max(120))
     .min(1)
     .max(12)
-    .default(["Professional 5–7 page website", "Hosting and SSL", "Ongoing maintenance", "Small content updates", "Lead-generation and contact features"]),
+    .default(["Complete multi-page website with all content written for you", "Hosting and SSL", "Ongoing maintenance", "Full website content and ongoing content updates", "Lead-generation and contact features"]),
 });
 
 export type OfferSettings = z.infer<typeof OfferSettingsSchema>;
@@ -70,7 +73,22 @@ export const CallingSettingsSchema = z.object({
 
 export type CallingSettings = z.infer<typeof CallingSettingsSchema>;
 
-const SCHEMAS = { compliance: ComplianceSettingsSchema, general: GeneralSettingsSchema, offer: OfferSettingsSchema, calling: CallingSettingsSchema } as const;
+/** Hands-off mode: research a market, create a campaign, find leads, write and send the emails. */
+export const AutopilotSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Limit the countries Autopilot may pick (empty = it chooses wherever the research says demand is). */
+  allowedCountries: z.array(z.string().trim().min(2).max(64)).max(30).default([]),
+  /** Limit the business types (empty = it chooses). */
+  allowedCategories: z.array(z.string().trim().min(2).max(80)).max(30).default([]),
+  /** Minimum hours between two researched campaigns. */
+  newCampaignEveryHours: z.number().int().min(1).max(720).default(24),
+  leadsPerCampaign: z.number().int().min(5).max(500).default(40),
+  dailyEmailLimit: z.number().int().min(1).max(1000).default(20),
+});
+
+export type AutopilotSettings = z.infer<typeof AutopilotSettingsSchema>;
+
+const SCHEMAS = { compliance: ComplianceSettingsSchema, general: GeneralSettingsSchema, offer: OfferSettingsSchema, calling: CallingSettingsSchema, autopilot: AutopilotSettingsSchema } as const;
 export type SettingsKey = keyof typeof SCHEMAS;
 type Key = SettingsKey;
 type ValueOf<K extends Key> = z.infer<(typeof SCHEMAS)[K]>;
@@ -78,7 +96,12 @@ type ValueOf<K extends Key> = z.infer<(typeof SCHEMAS)[K]>;
 export async function getSettings<K extends Key>(key: K): Promise<ValueOf<K>> {
   const row = await prisma.setting.findUnique({ where: { key } });
   const parsed = SCHEMAS[key].safeParse(row?.value ?? {});
-  return (parsed.success ? parsed.data : SCHEMAS[key].parse({})) as ValueOf<K>;
+  const value = (parsed.success ? parsed.data : SCHEMAS[key].parse({})) as ValueOf<K>;
+  if (key === "offer") {
+    const offer = value as OfferSettings;
+    offer.includes = upgradeLegacyIncludes(offer.includes);
+  }
+  return value;
 }
 
 export async function saveSettings<K extends Key>(key: K, value: unknown): Promise<ValueOf<K>> {

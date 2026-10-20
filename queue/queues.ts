@@ -17,6 +17,7 @@ export const QUEUES = {
   followups: "followups",
   inboxSync: "inbox-sync",
   callPlace: "call-place",
+  autopilot: "autopilot",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
@@ -31,6 +32,7 @@ export interface JobPayloads {
   "email-send": { messageId: string };
   followups: { scan: true };
   "inbox-sync": { scan: true };
+  autopilot: { tick: true };
   "call-place": { leadId: string; trigger: "auto" | "retry" };
 }
 

@@ -6,6 +6,7 @@ import type { NextAction } from "@/queue/queues";
 import { generateJsonCached } from "@/services/ai-analysis/aiClient";
 import { formatMonthlyPrice } from "@/lib/offer";
 import { getSettings } from "@/services/compliance/settings";
+import { matchTemplateByKeyword } from "@/templates/registry";
 import { buildVerifiedObservations } from "./observations";
 
 export class OutreachNotPossibleError extends Error {}
@@ -32,6 +33,9 @@ export async function generateOutreachDraft(
   if (!preview?.deploymentUrl) throw new OutreachNotPossibleError("No deployed preview for this lead yet");
 
   const [compliance, general, offer] = await Promise.all([getSettings("compliance"), getSettings("general"), getSettings("offer")]);
+  // Industrial / construction companies get the shared Summit demo instead of their own generated preview.
+  const industrial = matchTemplateByKeyword(lead.category) === "construction";
+  const previewUrl = industrial ? offer.industrialDemoUrl : preview.deploymentUrl;
   const check = lead.websiteChecks[0];
   const price = formatMonthlyPrice(offer);
   const packageFeatures = (lead.analyses[0]?.packageFeatures as string[] | null) ?? [];
@@ -61,6 +65,8 @@ export async function generateOutreachDraft(
     templateSubject: general.defaultEmailTemplate.subject,
     templateIntro: general.defaultEmailTemplate.intro,
     offer: { price, includes: offer.includes },
+    onlyDirectoryListings: lead.websiteStatus === "no_website",
+    demoIsExample: industrial,
     // Business-specific extras are the interesting ones; core features are covered by offer.includes.
     relevantFeatures: packageFeatures.filter((f) => !/website|hosting|mobile|seo|analytics|notification|contact information/i.test(f)).slice(0, 4),
   };
@@ -83,7 +89,7 @@ export async function generateOutreachDraft(
     logger.warn({ err, leadId }, "AI outreach generation failed; using template");
   }
 
-  const body = email.body.replace(/\{\{\s*preview_url\s*\}\}/g, preview.deploymentUrl);
+  const body = email.body.replace(/\{\{\s*preview_url\s*\}\}/g, previewUrl);
 
   // Replace an existing unsent draft rather than piling up duplicates.
   const existingDraft = await prisma.outreachMessage.findFirst({ where: { leadId, sequenceNumber: seq, status: "draft" } });
@@ -100,8 +106,9 @@ export async function generateOutreachDraft(
   await leadEvent(leadId, "outreach_drafted", seq === 0 ? `Outreach draft created (${provider})` : `Follow-up #${seq} draft created`);
   await audit({ userId: opts.userId, action: opts.regenerate ? "outreach.regenerate" : "outreach.draft", entityType: "outreach_message", entityId: message.id });
 
-  // Auto-send only when BOTH the campaign opted in AND global approval is off.
-  const autoSend = Boolean(lead.campaign?.autoSendEnabled) && !compliance.requireApproval;
+  // Auto-send when the campaign opted in AND (global approval is off OR the campaign runs on autopilot).
+  // Autopilot campaigns are fully hands-off, so they send without the manual approval step.
+  const autoSend = Boolean(lead.campaign?.autoSendEnabled) && (!compliance.requireApproval || Boolean(lead.campaign?.autopilot));
   if (autoSend) {
     await prisma.outreachMessage.update({ where: { id: message.id }, data: { status: "approved", approvedAt: new Date() } });
     await audit({ action: "outreach.auto_approve", entityType: "outreach_message", entityId: message.id });

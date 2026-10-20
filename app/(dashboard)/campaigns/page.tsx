@@ -30,7 +30,7 @@ export default async function CampaignsPage() {
             <TBody>
               {campaigns.map((c) => (
                 <TR key={c.id}>
-                  <TD><Link href={`/campaigns/${c.id}`} className="font-medium hover:underline">{c.name}</Link></TD>
+                  <TD><Link href={`/campaigns/${c.id}`} className="font-medium hover:underline">{c.name}</Link>{c.autopilot ? <span className="ml-2 text-xs text-muted-foreground">autopilot</span> : null}</TD>
                   <TD>{humanize(c.category)}</TD>
                   <TD className="text-muted-foreground">{[c.city, c.region, c.country].filter(Boolean).join(", ")}</TD>
                   <TD><StatusBadge status={c.status} /></TD>

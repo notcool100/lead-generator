@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
-import type { CallingSettings, ComplianceSettings, GeneralSettings, OfferSettings } from "@/services/compliance/settings";
+import type { AutopilotSettings, CallingSettings, ComplianceSettings, GeneralSettings, OfferSettings } from "@/services/compliance/settings";
 
-function useSave(key: "compliance" | "general" | "offer" | "calling") {
+function useSave(key: "compliance" | "general" | "offer" | "calling" | "autopilot") {
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, setPending] = useState(false);
@@ -106,11 +106,45 @@ export function OfferForm({ initial }: { initial: OfferSettings }) {
         <Field label="Monthly price"><Input type="number" min={1} step="0.01" value={s.monthlyPrice} onChange={(e) => setS({ ...s, monthlyPrice: Number(e.target.value) })} /></Field>
         <Field label="Currency" hint="ISO code, e.g. USD"><Input value={s.currency} maxLength={8} onChange={(e) => setS({ ...s, currency: e.target.value.toUpperCase() })} /></Field>
       </div>
+      <Field label="Industrial demo site" hint="Sent to construction / industrial companies instead of a per-business preview.">
+        <Input type="url" value={s.industrialDemoUrl} onChange={(e) => setS({ ...s, industrialDemoUrl: e.target.value })} />
+      </Field>
       <Field label="What the monthly fee includes" hint="One per line. Used in every email and call. No discounts are ever offered automatically.">
         <Textarea rows={5} value={includes} onChange={(e) => setIncludes(e.target.value)} />
       </Field>
       <div className="flex items-center gap-3">
         <Button type="submit" variant="secondary" disabled={pending}>Save offer</Button>
+        {msg ? <span className={msg.ok ? "text-sm text-success" : "text-sm text-destructive"}>{msg.text}</span> : null}
+      </div>
+    </form>
+  );
+}
+
+const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
+export function AutopilotForm({ initial }: { initial: AutopilotSettings }) {
+  const [s, setS] = useState(initial);
+  const [countries, setCountries] = useState(initial.allowedCountries.join(", "));
+  const [categories, setCategories] = useState(initial.allowedCategories.join(", "));
+  const { save, msg, pending } = useSave("autopilot");
+  const num = (k: keyof AutopilotSettings) => (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: Number(e.target.value) });
+  return (
+    <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); save({ ...s, allowedCountries: list(countries), allowedCategories: list(categories) }); }}>
+      <Checkbox
+        label="Autopilot on"
+        description="Researches which country and type of business to target, creates the campaign, finds leads, builds the previews and sends the emails with no approval step. Sending limits, unsubscribe links and suppression still apply."
+        checked={s.enabled}
+        onChange={(e) => setS({ ...s, enabled: e.target.checked })}
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Leads per campaign"><Input type="number" min={5} max={500} value={s.leadsPerCampaign} onChange={num("leadsPerCampaign")} /></Field>
+        <Field label="Emails / day per campaign"><Input type="number" min={1} value={s.dailyEmailLimit} onChange={num("dailyEmailLimit")} /></Field>
+        <Field label="New campaign every (hours)" hint="After the last one finishes"><Input type="number" min={1} value={s.newCampaignEveryHours} onChange={num("newCampaignEveryHours")} /></Field>
+      </div>
+      <Field label="Only these countries" hint="Comma-separated. Leave empty and Autopilot picks wherever the research says demand is."><Input value={countries} onChange={(e) => setCountries(e.target.value)} placeholder="United States, Australia, United Kingdom" /></Field>
+      <Field label="Only these business types" hint="Comma-separated, e.g. construction, restaurant. Leave empty to let Autopilot choose."><Input value={categories} onChange={(e) => setCategories(e.target.value)} placeholder="construction" /></Field>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" variant="secondary" disabled={pending}>Save Autopilot</Button>
         {msg ? <span className={msg.ok ? "text-sm text-success" : "text-sm text-destructive"}>{msg.text}</span> : null}
       </div>
     </form>

@@ -8,7 +8,8 @@ import { prisma } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { getSettings } from "@/services/compliance/settings";
 import { LEAD_SOURCES, sourceAvailability } from "@/providers/leads";
-import { CallingForm, ComplianceForm, GeneralForm, OfferForm, TestEmailForm } from "./settings-forms";
+import { ActionButton } from "@/components/action-button";
+import { AutopilotForm, CallingForm, ComplianceForm, GeneralForm, OfferForm, TestEmailForm } from "./settings-forms";
 import { callingConfigured } from "@/services/calling/callService";
 import { imapConfigured } from "@/services/email/inboxSync";
 
@@ -31,17 +32,28 @@ export default async function SettingsPage() {
   const inboxRow = await prisma.setting.findUnique({ where: { key: "imap_sync" } });
   const inboxState = inboxRow?.value as { lastSyncAt?: string } | undefined;
   const calling = callingConfigured();
-  const [compliance, general, offer, callingSettings, audits] = await Promise.all([
+  const [compliance, general, offer, callingSettings, autopilot, audits] = await Promise.all([
     getSettings("compliance"),
     getSettings("general"),
     getSettings("offer"),
     getSettings("calling"),
+    getSettings("autopilot"),
     prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 25, include: { user: { select: { name: true } } } }),
   ]);
 
   return (
     <>
       <PageHeader title="Settings" description="Secrets live in environment variables and are never sent to the browser." />
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Autopilot</CardTitle>
+          <CardDescription>Fully automatic email outreach: research a market, create the campaign, find leads, generate previews and send. Needs the worker process running.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <AutopilotForm initial={autopilot} />
+          {autopilot.enabled ? <div><ActionButton variant="outline" size="sm" endpoint="/api/autopilot/run">Research and launch the next campaign now</ActionButton></div> : null}
+        </CardContent>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>
           <CardHeader>

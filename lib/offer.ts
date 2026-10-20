@@ -3,7 +3,7 @@
  * these features that fits a business; previews, emails and calls describe it.
  */
 export const PACKAGE_FEATURES = [
-  "Professional 5–7 page website",
+  "Complete multi-page website with all content written for you",
   "Mobile-responsive design",
   "Hosting and SSL",
   "Business contact information",
@@ -25,7 +25,7 @@ export type PackageFeature = (typeof PACKAGE_FEATURES)[number];
 
 /** Always included regardless of business type. */
 export const CORE_PACKAGE_FEATURES: PackageFeature[] = [
-  "Professional 5–7 page website",
+  "Complete multi-page website with all content written for you",
   "Mobile-responsive design",
   "Hosting and SSL",
   "Business contact information",
@@ -33,6 +33,16 @@ export const CORE_PACKAGE_FEATURES: PackageFeature[] = [
   "Basic analytics",
   "Lead notifications",
 ];
+
+/** Wording used by earlier versions of the offer, rewritten when settings are read. */
+const LEGACY_INCLUDES: Record<string, string> = {
+  "Professional 5–7 page website": "Complete multi-page website with all content written for you",
+  "Small content updates": "Full website content and ongoing content updates",
+};
+
+export function upgradeLegacyIncludes(includes: string[]): string[] {
+  return includes.map((x) => LEGACY_INCLUDES[x] ?? x);
+}
 
 /** "$110/month" (falls back to "NPR 110/month" style for unknown currency codes). */
 export function formatMonthlyPrice(offer: { monthlyPrice: number; currency: string }): string {

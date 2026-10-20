@@ -14,6 +14,7 @@ import { deploymentWorker, previewWorker } from "./previewWorker";
 import { emailSendWorker, outreachDraftWorker } from "./outreachWorker";
 import { followupWorker, inboxSyncWorker } from "./followupWorker";
 import { callWorker } from "./callWorker";
+import { autopilotWorker } from "./autopilotWorker";
 import { imapConfigured } from "@/services/email/inboxSync";
 
 process.env.SERVICE_NAME ??= "worker";
@@ -30,10 +31,13 @@ async function main() {
     emailSendWorker(),
     followupWorker(),
     callWorker(),
+    autopilotWorker(),
     ...(imapConfigured() ? [inboxSyncWorker()] : []),
   ];
 
   await getQueue("followups").upsertJobScheduler("followup-scan", { every: 10 * 60_000 }, { name: "followups", data: { scan: true } });
+  // Autopilot checks hourly whether it should research a new market or continue discovery.
+  await getQueue("autopilot").upsertJobScheduler("autopilot-tick", { every: 60 * 60_000 }, { name: "autopilot", data: { tick: true }, opts: { attempts: 1 } });
   if (imapConfigured()) {
     // Poll the outreach mailbox for replies, unsubscribe requests and bounces.
     await getQueue("inbox-sync").upsertJobScheduler("inbox-sync", { every: 2 * 60_000 }, { name: "inbox-sync", data: { scan: true }, opts: { attempts: 1, removeOnComplete: { count: 200 } } });
